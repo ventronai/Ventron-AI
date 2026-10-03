@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
  * ║                 VENTRON AI CORE                 ║
- * ║          NEXT-GENERATION BOT FRAMEWORK          ║
+ * ║            CENTRAL CONTROL MANAGER              ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -10,7 +10,8 @@
 
 'use strict';
 
-const EventEmitter = require('events');
+const EventEmitter =
+  require('events');
 
 const CommandEngine =
   require('../commands/engine');
@@ -36,71 +37,148 @@ const VentronMessengerAdapter =
 const VentronSelfTest =
   require('./selftest');
 
-class VentronCore extends EventEmitter {
+const VentronLogger =
+  require('./logger');
+
+
+class VentronCore
+  extends EventEmitter {
 
   constructor(config) {
 
     super();
 
-    if (!config || !config.bot) {
+    if (
+      !config ||
+      !config.bot
+    ) {
       throw new Error(
         'Valid Ventron configuration is required.'
       );
     }
 
-    this.config = config;
+    this.config =
+      config;
 
     this.state = {
-      initialized: false,
-      started: false,
-      stopped: false,
-      startTime: null
+
+      initialized:
+        false,
+
+      started:
+        false,
+
+      stopped:
+        false,
+
+      startTime:
+        null
     };
 
-    this.modules = new Map();
+    this.modules =
+      new Map();
+
+
+    // ═══════════════════════════════════════════
+    // 📝 LOGGER
+    // ═══════════════════════════════════════════
+
+    this.logger =
+      new VentronLogger(
+        config
+      );
+
+
+    // ═══════════════════════════════════════════
+    // ⚡ CORE SERVICES
+    // ═══════════════════════════════════════════
 
     this.commandEngine =
-      new CommandEngine(config);
+      new CommandEngine(
+        config
+      );
 
     this.eventGateway =
-      new VentronEventGateway(config);
+      new VentronEventGateway(
+        config
+      );
 
     this.messageRouter =
-      new VentronMessageRouter(config);
+      new VentronMessageRouter(
+        config
+      );
 
     this.aiService =
-      new VentronAIService(config);
+      new VentronAIService(
+        config
+      );
 
     this.responseEngine =
-      new VentronResponseEngine(config);
+      new VentronResponseEngine(
+        config
+      );
 
     this.platformManager =
-      new VentronPlatformManager(config);
+      new VentronPlatformManager(
+        config
+      );
 
     this.messenger =
-      new VentronMessengerAdapter(config);
+      new VentronMessengerAdapter(
+        config
+      );
 
     this.selfTest =
-      new VentronSelfTest(this);
+      new VentronSelfTest(
+        this
+      );
+
+
+    // ═══════════════════════════════════════════
+    // 🔗 CONNECT CORE
+    // ═══════════════════════════════════════════
+
+    this.commandEngine.setCore(
+      this
+    );
+
+
+    // ═══════════════════════════════════════════
+    // 🌐 REGISTER PLATFORM
+    // ═══════════════════════════════════════════
 
     this.platformManager.register(
       'messenger',
       this.messenger
     );
 
+
+    // ═══════════════════════════════════════════
+    // 🔌 PIPELINES
+    // ═══════════════════════════════════════════
+
     this.connectEventPipeline();
+
     this.connectPlatformPipeline();
+
+
+    this.logger.debug(
+      'Ventron Core instance created.'
+    );
   }
 
-  // ═══════════════════════════════════════════════
-  // 🔗 INTERNAL EVENT PIPELINE
-  // ═══════════════════════════════════════════════
+
+  // ═════════════════════════════════════════════
+  // 🔀 EVENT PIPELINE
+  // ═════════════════════════════════════════════
 
   connectEventPipeline() {
 
     this.eventGateway.on(
       'message',
-      async (event) => {
+      async (
+        event
+      ) => {
 
         try {
 
@@ -110,6 +188,14 @@ class VentronCore extends EventEmitter {
 
         } catch (error) {
 
+          this.logger.error(
+            'Message pipeline error.',
+            {
+              error:
+                error.message
+            }
+          );
+
           this.emit(
             'pipelineError',
             error
@@ -117,10 +203,13 @@ class VentronCore extends EventEmitter {
         }
       }
     );
+
 
     this.eventGateway.on(
       'command',
-      async (event) => {
+      async (
+        event
+      ) => {
 
         try {
 
@@ -130,6 +219,14 @@ class VentronCore extends EventEmitter {
 
         } catch (error) {
 
+          this.logger.error(
+            'Command pipeline error.',
+            {
+              error:
+                error.message
+            }
+          );
+
           this.emit(
             'pipelineError',
             error
@@ -138,13 +235,12 @@ class VentronCore extends EventEmitter {
       }
     );
 
-    // ═════════════════════════════════════════
-    // 🧠 CHAT → AI → RESPONSE → PLATFORM
-    // ═════════════════════════════════════════
 
     this.messageRouter.on(
       'chat',
-      async (data) => {
+      async (
+        data
+      ) => {
 
         try {
 
@@ -153,6 +249,7 @@ class VentronCore extends EventEmitter {
 
           const result =
             await this.aiService.chat({
+
               message:
                 event.message,
 
@@ -169,6 +266,7 @@ class VentronCore extends EventEmitter {
                 event.thread?.id,
 
               context: {
+
                 source:
                   event.source,
 
@@ -177,19 +275,32 @@ class VentronCore extends EventEmitter {
               }
             });
 
-          if (!result.success) {
+
+          if (
+            !result.success
+          ) {
+
+            this.logger.warn(
+              'AI response failed.',
+              {
+                reason:
+                  result.reason
+              }
+            );
 
             this.emit(
               'aiResponse',
               {
                 event,
                 result,
-                response: null
+                response:
+                  null
               }
             );
 
             return;
           }
+
 
           const response =
             this.responseEngine.normalize(
@@ -199,6 +310,7 @@ class VentronCore extends EventEmitter {
                   event.user?.id,
 
                 metadata: {
+
                   source:
                     event.source,
 
@@ -211,6 +323,7 @@ class VentronCore extends EventEmitter {
               }
             );
 
+
           this.emit(
             'aiResponse',
             {
@@ -220,9 +333,10 @@ class VentronCore extends EventEmitter {
             }
           );
 
+
           if (
             event.source ===
-            'messenger' &&
+              'messenger' &&
             response &&
             response.success !== false
           ) {
@@ -235,6 +349,14 @@ class VentronCore extends EventEmitter {
 
         } catch (error) {
 
+          this.logger.error(
+            'AI chat pipeline error.',
+            {
+              error:
+                error.message
+            }
+          );
+
           this.emit(
             'pipelineError',
             error
@@ -243,13 +365,12 @@ class VentronCore extends EventEmitter {
       }
     );
 
-    // ═════════════════════════════════════════
-    // ⌨️ COMMAND → ENGINE → RESPONSE
-    // ═════════════════════════════════════════
 
     this.messageRouter.on(
       'command',
-      async (data) => {
+      async (
+        data
+      ) => {
 
         try {
 
@@ -270,10 +391,6 @@ class VentronCore extends EventEmitter {
               }
             );
 
-          let response = null;
 
-          if (
-            result &&
-            result.handled &&
-            result.result
-         
+          let response =
+           
