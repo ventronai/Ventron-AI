@@ -40,9 +40,11 @@ const VentronSelfTest =
 const VentronLogger =
   require('./logger');
 
+const VentronSecurityManager =
+  require('../security/manager');
 
-class VentronCore
-  extends EventEmitter {
+
+class VentronCore extends EventEmitter {
 
   constructor(config) {
 
@@ -85,6 +87,16 @@ class VentronCore
 
     this.logger =
       new VentronLogger(
+        config
+      );
+
+
+    // ═══════════════════════════════════════════
+    // 🛡️ SECURITY
+    // ═══════════════════════════════════════════
+
+    this.security =
+      new VentronSecurityManager(
         config
       );
 
@@ -169,6 +181,46 @@ class VentronCore
 
 
   // ═════════════════════════════════════════════
+  // 🔐 SECURITY CHECK
+  // ═════════════════════════════════════════════
+
+  checkSecurity(event) {
+
+    const identifier =
+      event?.user?.id ||
+      event?.sender?.id ||
+      event?.userId ||
+      event?.source ||
+      'unknown';
+
+
+    const result =
+      this.security.check(
+        identifier
+      );
+
+
+    if (
+      !result.allowed
+    ) {
+
+      this.logger.warn(
+        'Security request blocked.',
+        {
+          identifier,
+          reason:
+            result.reason
+        }
+      );
+
+      return false;
+    }
+
+    return true;
+  }
+
+
+  // ═════════════════════════════════════════════
   // 🔀 EVENT PIPELINE
   // ═════════════════════════════════════════════
 
@@ -179,6 +231,12 @@ class VentronCore
       async (
         event
       ) => {
+
+        if (
+          !this.checkSecurity(event)
+        ) {
+          return;
+        }
 
         try {
 
@@ -210,6 +268,12 @@ class VentronCore
       async (
         event
       ) => {
+
+        if (
+          !this.checkSecurity(event)
+        ) {
+          return;
+        }
 
         try {
 
@@ -666,6 +730,8 @@ class VentronCore
 
     this.logger.start();
 
+    this.security.initialize();
+
     this.logger.info(
       'Initializing Ventron Core...'
     );
@@ -758,6 +824,9 @@ class VentronCore
     this.logger.info(
       'Starting Ventron Core...'
     );
+
+
+    this.security.start();
 
 
     await this.commandEngine.start();
@@ -1033,6 +1102,9 @@ class VentronCore
     await this.commandEngine.stop();
 
 
+    this.security.stop();
+
+
     this.state.started =
       false;
 
@@ -1086,6 +1158,9 @@ class VentronCore
 
       logger:
         this.logger.getStatus(),
+
+      security:
+        this.security.getStatus(),
 
       commandEngine:
         this.commandEngine.getStatus(),
