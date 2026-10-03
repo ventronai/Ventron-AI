@@ -27,9 +27,16 @@ const VentronAIService =
 const VentronResponseEngine =
   require('../response/engine');
 
+const VentronPlatformManager =
+  require('../platform/manager');
+
+const VentronMessengerAdapter =
+  require('../platform/messenger');
+
 class VentronCore extends EventEmitter {
 
   constructor(config) {
+
     super();
 
     if (!config || !config.bot) {
@@ -64,11 +71,23 @@ class VentronCore extends EventEmitter {
     this.responseEngine =
       new VentronResponseEngine(config);
 
+    this.platformManager =
+      new VentronPlatformManager(config);
+
+    this.messenger =
+      new VentronMessengerAdapter(config);
+
+    this.platformManager.register(
+      'messenger',
+      this.messenger
+    );
+
     this.connectEventPipeline();
+    this.connectPlatformPipeline();
   }
 
   // ═══════════════════════════════════════════════
-  // 🔗 EVENT PIPELINE
+  // 🔗 INTERNAL EVENT PIPELINE
   // ═══════════════════════════════════════════════
 
   connectEventPipeline() {
@@ -152,6 +171,20 @@ class VentronCore extends EventEmitter {
               }
             });
 
+          if (!result.success) {
+
+            this.emit(
+              'aiResponse',
+              {
+                event,
+                result,
+                response: null
+              }
+            );
+
+            return;
+          }
+
           const response =
             this.responseEngine.normalize(
               result.response,
@@ -181,6 +214,20 @@ class VentronCore extends EventEmitter {
             }
           );
 
+          // Messenger response
+          if (
+            event.source ===
+            'messenger' &&
+            response &&
+            response.success !== false
+          ) {
+
+            await this.platformManager.send(
+              'messenger',
+              response
+            );
+          }
+
         } catch (error) {
 
           this.emit(
@@ -192,7 +239,7 @@ class VentronCore extends EventEmitter {
     );
 
     // ═════════════════════════════════════════
-    // ⌨️ COMMAND → COMMAND ENGINE → RESPONSE
+    // ⌨️ COMMAND → ENGINE → RESPONSE
     // ═════════════════════════════════════════
 
     this.messageRouter.on(
@@ -256,6 +303,20 @@ class VentronCore extends EventEmitter {
             }
           );
 
+          // Messenger response
+          if (
+            event.source ===
+            'messenger' &&
+            response &&
+            response.success !== false
+          ) {
+
+            await this.platformManager.send(
+              'messenger',
+              response
+            );
+          }
+
         } catch (error) {
 
           this.emit(
@@ -268,6 +329,55 @@ class VentronCore extends EventEmitter {
   }
 
   // ═══════════════════════════════════════════════
+  // 🌐 PLATFORM PIPELINE
+  // ═══════════════════════════════════════════════
+
+  connectPlatformPipeline() {
+
+    this.messenger.on(
+      'event',
+      async (event) => {
+
+        try {
+
+          await this.eventGateway.receive(
+            event
+          );
+
+        } catch (error) {
+
+          this.emit(
+            'pipelineError',
+            error
+          );
+        }
+      }
+    );
+
+    this.messenger.on(
+      'error',
+      (error) => {
+
+        this.emit(
+          'pipelineError',
+          error
+        );
+      }
+    );
+
+    this.platformManager.on(
+      'sent',
+      (data) => {
+
+        this.emit(
+          'platformResponse',
+          data
+        );
+      }
+    );
+  }
+
+  // ═══════════════════════════════════════════════
   // 🧩 MODULE SYSTEM
   // ═══════════════════════════════════════════════
 
@@ -275,4 +385,44 @@ class VentronCore extends EventEmitter {
 
     if (
       !name ||
-      typeof
+      typeof name !== 'string'
+    ) {
+
+      throw new TypeError(
+        'Module name must be a string.'
+      );
+    }
+
+    if (!module) {
+
+      throw new Error(
+        `Module "${name}" cannot be empty.`
+      );
+    }
+
+    if (
+      this.modules.has(name)
+    ) {
+
+      throw new Error(
+        `Module "${name}" is already registered.`
+      );
+    }
+
+    this.modules.set(
+      name,
+      module
+    );
+
+    this.emit(
+      'moduleRegistered',
+      {
+        name,
+        module
+      }
+    );
+
+    return true;
+  }
+
+ 
