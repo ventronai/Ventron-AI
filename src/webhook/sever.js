@@ -1,27 +1,10 @@
-/**
- * ╔══════════════════════════════════════════════════╗
- * ║             VENTRON WEBHOOK GATEWAY            ║
- * ║        External Event Ingestion Layer           ║
- * ╚══════════════════════════════════════════════════╝
- *
- * Version : 0.1.0
- * Author  : Zihad
- */
-
 'use strict';
 
-const http =
-  require('http');
-
-const crypto =
-  require('crypto');
+const crypto = require('crypto');
 
 class VentronWebhookServer {
 
-  constructor(
-    config,
-    core
-  ) {
+  constructor(config, core) {
 
     if (!config) {
       throw new Error(
@@ -35,17 +18,8 @@ class VentronWebhookServer {
       );
     }
 
-    this.config =
-      config;
-
-    this.core =
-      core;
-
-    this.server =
-      null;
-
-    this.started =
-      false;
+    this.config = config;
+    this.core = core;
 
     this.path =
       process.env.WEBHOOK_PATH ||
@@ -58,8 +32,9 @@ class VentronWebhookServer {
     this.maxBodySize =
       Number(
         process.env.WEBHOOK_MAX_BODY
-      ) ||
-      1024 * 1024;
+      ) || 1024 * 1024;
+
+    this.started = false;
 
     this.stats = {
       received: 0,
@@ -69,87 +44,15 @@ class VentronWebhookServer {
     };
   }
 
-  // ═══════════════════════════════════════════
-  // 🧠 REQUEST BODY
-  // ═══════════════════════════════════════════
+  verifyRequestToken(token) {
 
-  readBody(req) {
-
-    return new Promise(
-      (
-        resolve,
-        reject
-      ) => {
-
-        let body = '';
-
-        req.on(
-          'data',
-          chunk => {
-
-            body +=
-              chunk.toString();
-
-            if (
-              Buffer.byteLength(
-                body,
-                'utf8'
-              ) >
-              this.maxBodySize
-            ) {
-
-              reject(
-                new Error(
-                  'Webhook payload is too large.'
-                )
-              );
-
-              req.destroy();
-            }
-          }
-        );
-
-        req.on(
-          'end',
-          () => {
-
-            resolve(
-              body
-            );
-          }
-        );
-
-        req.on(
-          'error',
-          reject
-        );
-      }
-    );
-  }
-
-  // ═══════════════════════════════════════════
-  // 🔐 VERIFY TOKEN
-  // ═══════════════════════════════════════════
-
-  verifyRequestToken(
-    token
-  ) {
-
-    if (
-      !this.verifyToken
-    ) {
+    if (!this.verifyToken) {
       return false;
     }
 
-    return (
-      String(token) ===
-      String(this.verifyToken)
-    );
+    return String(token) ===
+      String(this.verifyToken);
   }
-
-  // ═══════════════════════════════════════════
-  // 🔏 SIGNATURE CHECK
-  // ═══════════════════════════════════════════
 
   verifySignature(
     body,
@@ -164,21 +67,14 @@ class VentronWebhookServer {
       return false;
     }
 
-    const prefix =
-      'sha256=';
-
     if (
-      !signature.startsWith(
-        prefix
-      )
+      !signature.startsWith('sha256=')
     ) {
       return false;
     }
 
     const received =
-      signature.slice(
-        prefix.length
-      );
+      signature.slice(7);
 
     const expected =
       crypto
@@ -186,13 +82,8 @@ class VentronWebhookServer {
           'sha256',
           appSecret
         )
-        .update(
-          body,
-          'utf8'
-        )
-        .digest(
-          'hex'
-        );
+        .update(body, 'utf8')
+        .digest('hex');
 
     if (
       received.length !==
@@ -214,50 +105,62 @@ class VentronWebhookServer {
     }
   }
 
-  // ═══════════════════════════════════════════
-  // 📡 HANDLE REQUEST
-  // ═══════════════════════════════════════════
+  async readBody(req) {
+
+    return new Promise(
+      (resolve, reject) => {
+
+        let body = '';
+
+        req.on(
+          'data',
+          chunk => {
+
+            body +=
+              chunk.toString();
+
+            if (
+              Buffer.byteLength(
+                body,
+                'utf8'
+              ) > this.maxBodySize
+            ) {
+
+              reject(
+                new Error(
+                  'Webhook payload is too large.'
+                )
+              );
+
+              req.destroy();
+            }
+          }
+        );
+
+        req.on(
+          'end',
+          () => resolve(body)
+        );
+
+        req.on(
+          'error',
+          reject
+        );
+      }
+    );
+  }
 
   async handle(
     req,
-    res
+    res,
+    url
   ) {
 
     this.stats.received++;
 
-    const url =
-      new URL(
-        req.url,
-        `http://${req.headers.host || 'localhost'}`
-      );
-
-
-    // ───────────────────────────────────────
-    // ❤️ HEALTH
-    // ───────────────────────────────────────
-
-    if (
-      req.method === 'GET' &&
-      url.pathname === '/health'
-    ) {
-
-      return this.sendJSON(
-        res,
-        200,
-        {
-          success: true,
-          service:
-            'Ventron Webhook Gateway',
-          status:
-            'online'
-        }
-      );
-    }
-
-
-    // ───────────────────────────────────────
-    // 🔐 WEBHOOK VERIFICATION
-    // ───────────────────────────────────────
+    // ═══════════════════════════════════════
+    // 🔐 META WEBHOOK VERIFICATION
+    // ═══════════════════════════════════════
 
     if (
       req.method === 'GET' &&
@@ -279,26 +182,31 @@ class VentronWebhookServer {
           'hub.challenge'
         );
 
-
       if (
         mode === 'subscribe' &&
-        this.verifyRequestToken(
-          token
-        )
+        this.verifyRequestToken(token)
       ) {
 
         this.stats.accepted++;
 
-        return this.sendText(
-          res,
+        res.writeHead(
           200,
+          {
+            'Content-Type':
+              'text/plain; charset=utf-8'
+          }
+        );
+
+        res.end(
           challenge || ''
         );
+
+        return true;
       }
 
       this.stats.rejected++;
 
-      return this.sendJSON(
+      this.sendJSON(
         res,
         403,
         {
@@ -307,12 +215,13 @@ class VentronWebhookServer {
             'Webhook verification failed.'
         }
       );
+
+      return true;
     }
 
-
-    // ───────────────────────────────────────
+    // ═══════════════════════════════════════
     // 📥 WEBHOOK EVENT
-    // ───────────────────────────────────────
+    // ═══════════════════════════════════════
 
     if (
       req.method === 'POST' &&
@@ -322,19 +231,16 @@ class VentronWebhookServer {
       try {
 
         const body =
-          await this.readBody(
-            req
-          );
-
-        const signature =
-          req.headers[
-            'x-hub-signature-256'
-          ];
+          await this.readBody(req);
 
         const appSecret =
           process.env.MESSENGER_APP_SECRET ||
           '';
 
+        const signature =
+          req.headers[
+            'x-hub-signature-256'
+          ];
 
         if (
           appSecret &&
@@ -347,7 +253,7 @@ class VentronWebhookServer {
 
           this.stats.rejected++;
 
-          return this.sendJSON(
+          this.sendJSON(
             res,
             403,
             {
@@ -356,23 +262,22 @@ class VentronWebhookServer {
                 'Invalid webhook signature.'
             }
           );
-        }
 
+          return true;
+        }
 
         let payload;
 
         try {
 
           payload =
-            JSON.parse(
-              body
-            );
+            JSON.parse(body);
 
         } catch {
 
           this.stats.rejected++;
 
-          return this.sendJSON(
+          this.sendJSON(
             res,
             400,
             {
@@ -381,18 +286,17 @@ class VentronWebhookServer {
                 'Invalid JSON payload.'
             }
           );
-        }
 
+          return true;
+        }
 
         await this.processPayload(
           payload
         );
 
-
         this.stats.accepted++;
 
-
-        return this.sendJSON(
+        this.sendJSON(
           res,
           200,
           {
@@ -400,6 +304,8 @@ class VentronWebhookServer {
             received: true
           }
         );
+
+        return true;
 
       } catch (error) {
 
@@ -413,7 +319,7 @@ class VentronWebhookServer {
           }
         );
 
-        return this.sendJSON(
+        this.sendJSON(
           res,
           500,
           {
@@ -422,32 +328,15 @@ class VentronWebhookServer {
               'Webhook processing failed.'
           }
         );
+
+        return true;
       }
     }
 
-
-    // ───────────────────────────────────────
-    // ❌ NOT FOUND
-    // ───────────────────────────────────────
-
-    return this.sendJSON(
-      res,
-      404,
-      {
-        success: false,
-        error:
-          'Webhook route not found.'
-      }
-    );
+    return false;
   }
 
-  // ═══════════════════════════════════════════
-  // 🔄 PROCESS PAYLOAD
-  // ═══════════════════════════════════════════
-
-  async processPayload(
-    payload
-  ) {
+  async processPayload(payload) {
 
     if (
       !payload ||
@@ -456,11 +345,7 @@ class VentronWebhookServer {
       return;
     }
 
-
-    /*
-     * Generic development event.
-     */
-
+    // Development event
     if (
       payload.type &&
       payload.message
@@ -475,169 +360,77 @@ class VentronWebhookServer {
       return;
     }
 
-
-    /*
-     * Generic Messenger-style entries.
-     * Detailed Meta event mapping will be added
-     * in the official transport layer.
-     */
-
+    // Messenger-style events
     if (
-      Array.isArray(
+      !Array.isArray(
         payload.entry
       )
     ) {
+      return;
+    }
+
+    for (
+      const entry
+      of payload.entry
+    ) {
+
+      if (
+        !Array.isArray(
+          entry.messaging
+        )
+      ) {
+        continue;
+      }
 
       for (
-        const entry
-        of payload.entry
+        const event
+        of entry.messaging
       ) {
 
-        if (
-          !Array.isArray(
-            entry.messaging
-          )
-        ) {
+        const messageText =
+          event.message?.text ||
+          '';
+
+        if (!messageText) {
           continue;
         }
 
-        for (
-          const event
-          of entry.messaging
-        ) {
+        const senderId =
+          event.sender?.id ||
+          null;
 
-          const senderId =
-            event.sender?.id ||
-            null;
+        await this.core
+          .receiveFromPlatform(
+            'messenger',
+            {
+              id:
+                event.message?.mid ||
+                null,
 
-          const messageText =
-            event.message?.text ||
-            '';
+              message:
+                messageText,
 
-          if (
-            !messageText
-          ) {
-            continue;
-          }
-
-          await this.core
-            .receiveFromPlatform(
-              'messenger',
-              {
-
+              sender: {
                 id:
-                  event.message?.mid ||
-                  null,
+                  senderId
+              },
 
-                message:
-                  messageText,
+              thread: {
+                id:
+                  senderId
+              },
 
-                sender: {
-                  id:
-                    senderId
-                },
+              timestamp:
+                event.timestamp ||
+                Date.now(),
 
-                thread: {
-                  id:
-                    senderId
-                },
-
-                timestamp:
-                  event.timestamp ||
-                  Date.now(),
-
-                raw:
-                  event
-              }
-            );
-        }
-      }
-    }
-  }
-
-  // ═══════════════════════════════════════════
-  // 🌐 START SERVER
-  // ═══════════════════════════════════════════
-
-  start() {
-
-    if (
-      this.started
-    ) {
-      return this.server;
-    }
-
-    const host =
-      this.config.server.host;
-
-    const port =
-      this.config.server.port;
-
-
-    this.server =
-      http.createServer(
-        (
-          req,
-          res
-        ) => {
-
-          this.handle(
-            req,
-            res
-          ).catch(
-            error => {
-
-              this.core.logger.error(
-                error
-              );
-
-              if (
-                !res.headersSent
-              ) {
-
-                this.sendJSON(
-                  res,
-                  500,
-                  {
-                    success: false,
-                    error:
-                      'Internal webhook error.'
-                  }
-                );
-              }
+              raw:
+                event
             }
           );
-        }
-      );
-
-
-    this.server.listen(
-      port,
-      host,
-      () => {
-
-        this.started =
-          true;
-
-        this.core.logger.info(
-          'Webhook Gateway started.',
-          {
-            path:
-              this.path,
-
-            port
-          }
-        );
       }
-    );
-
-
-    return this.server;
+    }
   }
-
-  // ═══════════════════════════════════════════
-  // 📤 JSON RESPONSE
-  // ═══════════════════════════════════════════
 
   sendJSON(
     res,
@@ -645,9 +438,7 @@ class VentronWebhookServer {
     data
   ) {
 
-    if (
-      res.headersSent
-    ) {
+    if (res.headersSent) {
       return;
     }
 
@@ -668,38 +459,23 @@ class VentronWebhookServer {
     );
   }
 
-  // ═══════════════════════════════════════════
-  // 📤 TEXT RESPONSE
-  // ═══════════════════════════════════════════
+  start() {
 
-  sendText(
-    res,
-    status,
-    text
-  ) {
+    this.started = true;
 
-    if (
-      res.headersSent
-    ) {
-      return;
-    }
-
-    res.writeHead(
-      status,
-      {
-        'Content-Type':
-          'text/plain; charset=utf-8'
-      }
-    );
-
-    res.end(
-      String(text)
+    this.core.logger.info(
+      'Webhook Gateway connected.'
     );
   }
 
-  // ═══════════════════════════════════════════
-  // 📊 STATUS
-  // ═══════════════════════════════════════════
+  async stop() {
+
+    this.started = false;
+
+    this.core.logger.info(
+      'Webhook Gateway disconnected.'
+    );
+  }
 
   getStatus() {
 
@@ -725,40 +501,6 @@ class VentronWebhookServer {
         ...this.stats
       }
     };
-  }
-
-  // ═══════════════════════════════════════════
-  // 🛑 STOP
-  // ═══════════════════════════════════════════
-
-  async stop() {
-
-    if (
-      !this.server
-    ) {
-      return;
-    }
-
-    await new Promise(
-      resolve => {
-
-        this.server.close(
-          () => {
-            resolve();
-          }
-        );
-      }
-    );
-
-    this.started =
-      false;
-
-    this.server =
-      null;
-
-    this.core.logger.info(
-      'Webhook Gateway stopped.'
-    );
   }
 }
 
