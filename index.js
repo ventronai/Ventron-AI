@@ -14,6 +14,7 @@ const os = require('os');
 
 const config = require('./config');
 const VentronCore = require('./src/core/manager');
+const VentronDiagnostics = require('./src/core/diagnostics');
 
 // ═══════════════════════════════════════════════════
 // 🤖 VENTRON IDENTITY
@@ -31,17 +32,45 @@ const VENTRON = {
 // ═══════════════════════════════════════════════════
 
 function getSystemInfo() {
-  const totalMemory = os.totalmem();
-  const freeMemory = os.freemem();
+
+  const totalMemory =
+    os.totalmem();
+
+  const freeMemory =
+    os.freemem();
 
   return {
-    platform: process.platform,
-    architecture: process.arch,
-    node: process.version,
-    cpuCores: os.cpus().length,
-    totalMemoryMB: Math.round(totalMemory / 1024 / 1024),
-    freeMemoryMB: Math.round(freeMemory / 1024 / 1024),
-    uptimeSeconds: Math.floor(process.uptime())
+
+    platform:
+      process.platform,
+
+    architecture:
+      process.arch,
+
+    node:
+      process.version,
+
+    cpuCores:
+      os.cpus().length,
+
+    totalMemoryMB:
+      Math.round(
+        totalMemory /
+        1024 /
+        1024
+      ),
+
+    freeMemoryMB:
+      Math.round(
+        freeMemory /
+        1024 /
+        1024
+      ),
+
+    uptimeSeconds:
+      Math.floor(
+        process.uptime()
+      )
   };
 }
 
@@ -50,14 +79,15 @@ function getSystemInfo() {
 // ═══════════════════════════════════════════════════
 
 function printBanner() {
+
   console.clear();
 
   console.log(`
 ╔══════════════════════════════════════════════════════╗
 ║                                                      ║
-║              V E N T R O N   A I                     ║
+║              V E N T R O N   A I                    ║
 ║                                                      ║
-║          NEXT-GENERATION AI FRAMEWORK                ║
+║          NEXT-GENERATION AI FRAMEWORK               ║
 ║                                                      ║
 ║              ${VENTRON.nickname.padEnd(28)}║
 ║              v${VENTRON.version.padEnd(27)}║
@@ -67,132 +97,327 @@ function printBanner() {
 }
 
 // ═══════════════════════════════════════════════════
-// 🚀 CORE STARTUP
+// 📊 PRINT DIAGNOSTIC REPORT
 // ═══════════════════════════════════════════════════
 
-async function startVentron() {
-  printBanner();
+function printDiagnostics(report) {
 
-  console.log('⚡ Initializing Ventron AI Core...\n');
+  console.log(
+    '\n┌──────────────────────────────────────────────┐'
+  );
 
-  const core = new VentronCore(config);
+  console.log(
+    '│          VENTRON DIAGNOSTIC REPORT           │'
+  );
 
-  // Core Events
-  core.on('initialized', (data) => {
-    console.log(`🧠 Core initialized: ${data.bot} v${data.version}`);
-  });
+  console.log(
+    '├──────────────────────────────────────────────┤'
+  );
 
-  core.on('moduleRegistered', ({ name }) => {
-    console.log(`🧩 Module registered: ${name}`);
-  });
+  console.log(
+    `│ Overall Status    : ${report.status}`
+  );
 
-  core.on('started', () => {
-    console.log('🚀 Ventron Core started.');
-  });
+  console.log(
+    `│ Core              : ${
+      report.core.started
+        ? 'ONLINE'
+        : 'STANDBY'
+    }`
+  );
 
-  core.on('stopped', () => {
-    console.log('🛑 Ventron Core stopped.');
-  });
+  console.log(
+    `│ Command Engine    : ${
+      report.commands.status
+    }`
+  );
 
-  // Initialize
-  core.initialize();
+  console.log(
+    `│ Commands Loaded   : ${
+      report.commands.count
+    }`
+  );
 
-  const system = getSystemInfo();
+  console.log(
+    `│ Command Failures  : ${
+      report.commands.failed
+    }`
+  );
 
-  console.log('\n┌──────────────────────────────────────────────┐');
-  console.log('│              VENTRON CORE STATUS             │');
-  console.log('├──────────────────────────────────────────────┤');
-  console.log('│ 🧠 AI Engine       : STANDBY                 │');
-  console.log('│ 🌐 API Gateway     : STANDBY                 │');
-  console.log('│ 🧩 Plugin Engine   : STANDBY                 │');
-  console.log('│ 📡 Event Engine    : STANDBY                 │');
-  console.log('│ 🛡️ Security Layer  : ACTIVE                  │');
-  console.log('│ 💾 Database        : STANDBY                 │');
-  console.log('└──────────────────────────────────────────────┘');
+  console.log(
+    `│ Security Layer    : ${
+      report.security.status
+    }`
+  );
 
-  console.log('\n┌──────────────────────────────────────────────┐');
-  console.log('│                 SYSTEM INFO                  │');
-  console.log('├──────────────────────────────────────────────┤');
-  console.log(`│ Platform          : ${system.platform}`);
-  console.log(`│ Architecture      : ${system.architecture}`);
-  console.log(`│ Node.js           : ${system.node}`);
-  console.log(`│ CPU Cores         : ${system.cpuCores}`);
-  console.log(`│ Total Memory      : ${system.totalMemoryMB} MB`);
-  console.log(`│ Free Memory       : ${system.freeMemoryMB} MB`);
-  console.log('└──────────────────────────────────────────────┘');
+  console.log(
+    `│ CPU Cores         : ${
+      report.system.cpuCores
+    }`
+  );
 
-  console.log('\n────────────────────────────────────────────────');
+  console.log(
+    `│ Node.js           : ${
+      report.system.node
+    }`
+  );
 
-  console.log(`🤖 Bot       : ${VENTRON.name}`);
-  console.log(`✨ Nickname  : ${VENTRON.nickname}`);
-  console.log(`📦 Version   : ${VENTRON.version}`);
-  console.log(`👑 Author    : ${VENTRON.author}`);
-  console.log(`⌨️ Prefix    : ${config.commands.prefix}`);
-  console.log(`🔐 Admin     : ${config.admin.name}`);
+  console.log(
+    '└──────────────────────────────────────────────┘'
+  );
 
-  console.log('\n────────────────────────────────────────────────');
+  if (report.commands.commands.length) {
 
-  await core.start();
+    console.log(
+      '\n🧩 Loaded Commands:'
+    );
 
-  console.log('\n✅ Ventron AI is ready.');
-  console.log('🌐 Core architecture is online.');
-  console.log('🚀 Waiting for modules...\n');
+    for (
+      const command
+      of report.commands.commands
+    ) {
 
-  return core;
+      console.log(
+        `   • ${config.commands.prefix}${command}`
+      );
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════
-// 🛡️ ERROR HANDLING
+// 🚀 START VENTRON
 // ═══════════════════════════════════════════════════
 
-process.on('uncaughtException', (error) => {
-  console.error('\n❌ Uncaught Exception');
-  console.error(error);
-});
+async function startVentron() {
 
-process.on('unhandledRejection', (reason) => {
-  console.error('\n❌ Unhandled Promise Rejection');
-  console.error(reason);
-});
+  printBanner();
 
-// ═══════════════════════════════════════════════════
-// 🛑 SAFE SHUTDOWN
-// ═══════════════════════════════════════════════════
+  console.log(
+    '⚡ Initializing Ventron AI Core...\n'
+  );
 
-let ventronCore = null;
+  const core =
+    new VentronCore(config);
 
-process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutdown signal received.');
+  // ═══════════════════════════════════════════════
+  // 🧠 CORE EVENTS
+  // ═══════════════════════════════════════════════
 
-  if (ventronCore) {
-    await ventronCore.stop();
-  }
+  core.on(
+    'initialized',
+    (data) => {
 
-  console.log('✅ Ventron AI stopped safely.');
-  process.exit(0);
-});
+      console.log(
+        `🧠 Core initialized: ${data.bot} v${data.version}`
+      );
 
-process.on('SIGTERM', async () => {
-  console.log('\n🛑 Termination signal received.');
+      if (data.commands) {
 
-  if (ventronCore) {
-    await ventronCore.stop();
-  }
+        console.log(
+          `🧩 Commands discovered: ${data.commands.length}`
+        );
+      }
+    }
+  );
 
-  console.log('✅ Ventron AI stopped safely.');
-  process.exit(0);
-});
+  core.on(
+    'moduleRegistered',
+    ({ name }) => {
 
-// ═══════════════════════════════════════════════════
-// ▶️ BOOT
-// ═══════════════════════════════════════════════════
+      console.log(
+        `🧩 Module registered: ${name}`
+      );
+    }
+  );
 
-startVentron()
-  .then((core) => {
-    ventronCore = core;
-  })
-  .catch((error) => {
-    console.error('\n❌ Ventron AI failed to start.');
-    console.error(error);
-    process.exit(1);
-  });
+  core.on(
+    'commandEngineStarted',
+    (data) => {
+
+      console.log(
+        `⚡ Command Engine online: ${data.commands.length} commands`
+      );
+    }
+  );
+
+  core.on(
+    'started',
+    () => {
+
+      console.log(
+        '🚀 Ventron Core started.'
+      );
+    }
+  );
+
+  core.on(
+    'moduleError',
+    ({ name, error }) => {
+
+      console.error(
+        `❌ Module error [${name}]:`,
+        error.message
+      );
+    }
+  );
+
+  core.on(
+    'stopped',
+    () => {
+
+      console.log(
+        '🛑 Ventron Core stopped.'
+      );
+    }
+  );
+
+  // ═══════════════════════════════════════════════
+  // 🧠 INITIALIZE CORE
+  // ═══════════════════════════════════════════════
+
+  core.initialize();
+
+  const system =
+    getSystemInfo();
+
+  console.log(
+    '\n┌──────────────────────────────────────────────┐'
+  );
+
+  console.log(
+    '│              VENTRON CORE STATUS             │'
+  );
+
+  console.log(
+    '├──────────────────────────────────────────────┤'
+  );
+
+  console.log(
+    '│ 🧠 AI Engine       : STANDBY                 │'
+  );
+
+  console.log(
+    '│ 🌐 API Gateway     : STANDBY                 │'
+  );
+
+  console.log(
+    '│ 🧩 Plugin Engine   : STANDBY                 │'
+  );
+
+  console.log(
+    '│ 📡 Event Engine    : STANDBY                 │'
+  );
+
+  console.log(
+    '│ 🛡️ Security Layer  : ACTIVE                 │'
+  );
+
+  console.log(
+    '│ 💾 Database        : STANDBY                 │'
+  );
+
+  console.log(
+    '│ ⚡ Command Engine  : INITIALIZING            │'
+  );
+
+  console.log(
+    '└──────────────────────────────────────────────┘'
+  );
+
+  console.log(
+    '\n┌──────────────────────────────────────────────┐'
+  );
+
+  console.log(
+    '│                 SYSTEM INFO                  │'
+  );
+
+  console.log(
+    '├──────────────────────────────────────────────┤'
+  );
+
+  console.log(
+    `│ Platform          : ${system.platform}`
+  );
+
+  console.log(
+    `│ Architecture      : ${system.architecture}`
+  );
+
+  console.log(
+    `│ Node.js           : ${system.node}`
+  );
+
+  console.log(
+    `│ CPU Cores         : ${system.cpuCores}`
+  );
+
+  console.log(
+    `│ Total Memory      : ${system.totalMemoryMB} MB`
+  );
+
+  console.log(
+    `│ Free Memory       : ${system.freeMemoryMB} MB`
+  );
+
+  console.log(
+    '└──────────────────────────────────────────────┘'
+  );
+
+  console.log(
+    '\n────────────────────────────────────────────────'
+  );
+
+  console.log(
+    `🤖 Bot       : ${VENTRON.name}`
+  );
+
+  console.log(
+    `✨ Nickname  : ${VENTRON.nickname}`
+  );
+
+  console.log(
+    `📦 Version   : ${VENTRON.version}`
+  );
+
+  console.log(
+    `👑 Author    : ${VENTRON.author}`
+  );
+
+  console.log(
+    `⌨️ Prefix    : ${config.commands.prefix}`
+  );
+
+  console.log(
+    `🔐 Admin     : ${config.admin.name}`
+  );
+
+  console.log(
+    '\n────────────────────────────────────────────────'
+  );
+
+  // ═══════════════════════════════════════════════
+  // 🚀 START CORE
+  // ═══════════════════════════════════════════════
+
+  await core.start();
+
+  // ═══════════════════════════════════════════════
+  // 🩺 DIAGNOSTICS
+  // ═══════════════════════════════════════════════
+
+  const diagnostics =
+    new VentronDiagnostics(core);
+
+  const report =
+    diagnostics.getReport();
+
+  printDiagnostics(report);
+
+  console.log(
+    '\n────────────────────────────────────────────────'
+  );
+
+  console.log(
+    '✅ Ventron AI is ready.'
+ 
