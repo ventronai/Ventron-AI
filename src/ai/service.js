@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║              VENTRON AI SERVICE                ║
- * ║        Conversation Orchestration Layer         ║
+ * ║                 VENTRON AI SERVICE             ║
+ * ║          AI + MEMORY + STORAGE BRIDGE          ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -13,11 +13,9 @@
 const VentronAIEngine =
   require('./engine');
 
-const VentronMemory =
+const VentronAIMemory =
   require('./memory');
 
-const VentronLocalProvider =
-  require('./providers/local');
 
 class VentronAIService {
 
@@ -29,218 +27,416 @@ class VentronAIService {
       );
     }
 
-    this.config = config;
+    this.config =
+      config;
+
+    this.state = {
+
+      initialized:
+        false,
+
+      started:
+        false
+    };
+
 
     // ═══════════════════════════════════════════
     // 🧠 AI ENGINE
     // ═══════════════════════════════════════════
 
     this.engine =
-      new VentronAIEngine(config);
+      new VentronAIEngine(
+        config
+      );
+
 
     // ═══════════════════════════════════════════
-    // 💾 MEMORY
+    // 💭 AI MEMORY
     // ═══════════════════════════════════════════
 
     this.memory =
-      new VentronMemory(config);
+      new VentronAIMemory(
+        config
+      );
 
-    // ═══════════════════════════════════════════
-    // 🔌 LOCAL PROVIDER
-    // ═══════════════════════════════════════════
 
-    this.localProvider =
-      new VentronLocalProvider();
+    this.core =
+      null;
 
-    this.state = {
-      initialized: false,
-      started: false
+
+    this.stats = {
+
+      requests:
+        0,
+
+      responses:
+        0,
+
+      failures:
+        0
     };
   }
 
-  // ═══════════════════════════════════════════════
-  // 🧠 INITIALIZE
-  // ═══════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════
+  // 🔗 CORE CONNECTION
+  // ═══════════════════════════════════════════
+
+  setCore(core) {
+
+    if (!core) {
+
+      throw new Error(
+        'Ventron Core instance is required.'
+      );
+    }
+
+    this.core =
+      core;
+
+
+    // Connect persistent storage
+    if (
+      core.storage
+    ) {
+
+      this.memory.setStorage(
+        core.storage
+      );
+    }
+
+
+    return true;
+  }
+
+
+  // ═══════════════════════════════════════════
+  // 🚀 INITIALIZE
+  // ═══════════════════════════════════════════
 
   initialize() {
 
-    if (this.state.initialized) {
+    if (
+      this.state.initialized
+    ) {
       return;
     }
+
+
+    // Make sure storage is connected
+    if (
+      this.core?.storage &&
+      !this.memory.storage
+    ) {
+
+      this.memory.setStorage(
+        this.core.storage
+      );
+    }
+
 
     this.engine.initialize();
 
-    this.engine.registerProvider(
-      'local',
-      this.localProvider
-    );
+    this.memory.initialize();
 
-    this.engine.setDefaultProvider(
-      'local'
-    );
 
-    this.state.initialized = true;
-  }
+    this.state.initialized =
+      true;
 
-  // ═══════════════════════════════════════════════
-  // 🚀 START
-  // ═══════════════════════════════════════════════
-
-  async start() {
-
-    if (!this.state.initialized) {
-      this.initialize();
-    }
-
-    if (this.state.started) {
-      return;
-    }
-
-    await this.engine.start();
-
-    this.state.started = true;
 
     return {
-      success: true,
-      status: 'online'
+
+      success:
+        true,
+
+      status:
+        'initialized'
     };
   }
 
-  // ═══════════════════════════════════════════════
-  // 💬 CHAT
-  // ═══════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════
+  // ⚡ START
+  // ═══════════════════════════════════════════
+
+  async start() {
+
+    if (
+      !this.state.initialized
+    ) {
+      this.initialize();
+    }
+
+
+    if (
+      this.state.started
+    ) {
+      return;
+    }
+
+
+    await this.engine.start();
+
+    await this.memory.start();
+
+
+    this.state.started =
+      true;
+
+
+    return {
+
+      success:
+        true,
+
+      status:
+        'online'
+    };
+  }
+
+
+  // ═══════════════════════════════════════════
+  // 🧠 CHAT
+  // ═══════════════════════════════════════════
 
   async chat(input = {}) {
 
-    if (!this.state.started) {
-      return {
-        success: false,
-        response: null,
-        reason: 'AI_SERVICE_OFFLINE'
-      };
-    }
+    this.stats.requests++;
 
-    const userId =
-      input.userId ||
-      input.user?.id ||
-      'unknown-user';
 
-    const threadId =
-      input.threadId ||
-      input.thread?.id ||
-      'default-thread';
+    try {
 
-    const message =
-      typeof input.message === 'string'
-        ? input.message.trim()
-        : '';
+      const message =
+        String(
+          input.message || ''
+        ).trim();
 
-    if (!message) {
-      return {
-        success: false,
-        response: null,
-        reason: 'EMPTY_MESSAGE'
-      };
-    }
 
-    // ═══════════════════════════════════════════
-    // 📚 PREVIOUS CONTEXT
-    // ═══════════════════════════════════════════
+      if (!message) {
 
-    const history =
-      this.memory.getHistory(
-        userId,
-        threadId
-      );
+        this.stats.failures++;
 
-    // ═══════════════════════════════════════════
-    // 👤 SAVE USER MESSAGE
-    // ═══════════════════════════════════════════
+        return {
 
-    this.memory.addMessage(
-      userId,
-      threadId,
-      'user',
-      message
-    );
+          success:
+            false,
 
-    // ═══════════════════════════════════════════
-    // 🧠 AI GENERATION
-    // ═══════════════════════════════════════════
+          reason:
+            'EMPTY_MESSAGE',
 
-    const result =
-      await this.engine.generate({
-        message,
+          response:
+            'কোনো মেসেজ পাওয়া যায়নি।'
+        };
+      }
 
-        user:
-          input.user || {
-            id: userId
-          },
 
-        thread:
-          input.thread || {
-            id: threadId
-          },
+      const userId =
+        String(
+          input.userId ||
+          input.user?.id ||
+          'unknown'
+        );
 
-        history,
 
-        context:
-          input.context || {}
-      });
+      const threadId =
+        String(
+          input.threadId ||
+          input.thread?.id ||
+          'default'
+        );
 
-    if (!result.success) {
-      return result;
-    }
 
-    // ═══════════════════════════════════════════
-    // 🤖 EXTRACT RESPONSE
-    // ═══════════════════════════════════════════
+      // ═════════════════════════════════════════
+      // 📚 LOAD PREVIOUS MEMORY
+      // ═════════════════════════════════════════
 
-    const generated =
-      result.response;
+      const context =
+        this.memory.getContext(
+          userId,
+          threadId
+        );
 
-    const responseText =
-      typeof generated === 'string'
-        ? generated
-        : generated?.text;
 
-    if (responseText) {
+      // ═════════════════════════════════════════
+      // 💾 SAVE USER MESSAGE
+      // ═════════════════════════════════════════
 
       this.memory.addMessage(
         userId,
         threadId,
-        'assistant',
-        responseText
+        'user',
+        message,
+        {
+          source:
+            input.source ||
+            input.context?.source ||
+            'unknown'
+        }
       );
-    }
 
-    return {
-      success: true,
 
-      provider:
-        result.provider,
+      // ═════════════════════════════════════════
+      // 🤖 AI ENGINE
+      // ═════════════════════════════════════════
 
-      response:
-        responseText || '',
+      const result =
+        await this.engine.chat({
 
-      history:
-        this.memory.getHistory(
+          message,
+
+          context,
+
           userId,
-          threadId
-        ),
 
-      timestamp:
-        result.timestamp
-    };
+          threadId,
+
+          user:
+            input.user || null,
+
+          thread:
+            input.thread || null,
+
+          metadata:
+            input.metadata || {}
+        });
+
+
+      if (
+        !result ||
+        !result.success
+      ) {
+
+        this.stats.failures++;
+
+        return {
+
+          success:
+            false,
+
+          reason:
+            result?.reason ||
+            'AI_ENGINE_FAILED',
+
+          response:
+            result?.response ||
+            'দুঃখিত, এই মুহূর্তে AI response তৈরি করা যাচ্ছে না।'
+        };
+      }
+
+
+      const response =
+        String(
+          result.response || ''
+        ).trim();
+
+
+      // ═════════════════════════════════════════
+      // 💾 SAVE AI RESPONSE
+      // ═════════════════════════════════════════
+
+      if (response) {
+
+        this.memory.addMessage(
+          userId,
+          threadId,
+          'assistant',
+          response,
+          {
+            provider:
+              result.provider ||
+              null
+          }
+        );
+      }
+
+
+      this.stats.responses++;
+
+
+      return {
+
+        success:
+          true,
+
+        response,
+
+        provider:
+          result.provider ||
+          null,
+
+        userId,
+
+        threadId,
+
+        memory:
+          this.memory.getStatus()
+      };
+
+    } catch (error) {
+
+      this.stats.failures++;
+
+
+      return {
+
+        success:
+          false,
+
+        reason:
+          'AI_SERVICE_ERROR',
+
+        error:
+          error.message,
+
+        response:
+          'AI service-এ একটি সমস্যা হয়েছে।'
+      };
+    }
   }
 
-  // ═══════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════
+  // 💭 MEMORY ACCESS
+  // ═══════════════════════════════════════════
+
+  getMemory(
+    userId,
+    threadId
+  ) {
+
+    return this.memory.getMessages(
+      userId,
+      threadId
+    );
+  }
+
+
+  clearMemory(
+    userId,
+    threadId
+  ) {
+
+    return this.memory.clearSession(
+      userId,
+      threadId
+    );
+  }
+
+
+  clearAllMemory() {
+
+    return this.memory.clearAll();
+  }
+
+
+  // ═══════════════════════════════════════════
   // 📊 STATUS
-  // ═══════════════════════════════════════════════
+  // ═══════════════════════════════════════════
 
   getStatus() {
 
     return {
+
       initialized:
         this.state.initialized,
 
@@ -253,41 +449,37 @@ class VentronAIService {
       memory:
         this.memory.getStatus(),
 
-      provider:
-        this.localProvider.getStatus()
+      stats:
+        {
+          ...this.stats
+        }
     };
   }
 
-  // ═══════════════════════════════════════════════
-  // 🧹 CLEAR MEMORY
-  // ═══════════════════════════════════════════════
 
-  clearMemory(
-    userId,
-    threadId
-  ) {
-
-    return this.memory.clear(
-      userId,
-      threadId
-    );
-  }
-
-  // ═══════════════════════════════════════════════
+  // ═══════════════════════════════════════════
   // 🛑 STOP
-  // ═══════════════════════════════════════════════
+  // ═══════════════════════════════════════════
 
   async stop() {
 
-    if (!this.state.started) {
+    if (
+      !this.state.started
+    ) {
       return;
     }
 
+
+    await this.memory.stop();
+
     await this.engine.stop();
 
-    this.state.started = false;
+
+    this.state.started =
+      false;
   }
 }
+
 
 module.exports =
   VentronAIService;
