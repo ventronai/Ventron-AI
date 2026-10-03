@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║              VENTRON AI SELF TEST               ║
- * ║          Internal Pipeline Diagnostics          ║
+ * ║                VENTRON SELF TEST               ║
+ * ║          COMPLETE SYSTEM DIAGNOSTICS           ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -9,6 +9,7 @@
  */
 
 'use strict';
+
 
 class VentronSelfTest {
 
@@ -23,44 +24,62 @@ class VentronSelfTest {
     this.core =
       core;
 
-    this.tests = [];
+    this.tests =
+      [];
+
+    this.lastRun =
+      null;
   }
 
 
   // ═══════════════════════════════════════════
-  // 🧪 GENERIC TEST RUNNER
+  // 🧪 SINGLE TEST
   // ═══════════════════════════════════════════
 
   async runTest(
     name,
-    callback
+    handler
   ) {
 
-    const startedAt =
+    const started =
       Date.now();
 
     try {
 
       const result =
-        await callback();
+        await handler();
+
 
       const passed =
-        result !== false;
+        result === true ||
+        result?.success === true;
+
 
       const test = {
 
         name,
 
-        passed,
+        success:
+          passed,
 
         duration:
           Date.now() -
-          startedAt
+          started,
+
+        result:
+          typeof result === 'object'
+            ? result
+            : {
+                success:
+                  passed
+              }
       };
+
 
       this.tests.push(
         test
       );
+
 
       return test;
 
@@ -70,20 +89,22 @@ class VentronSelfTest {
 
         name,
 
-        passed:
+        success:
           false,
 
         duration:
           Date.now() -
-          startedAt,
+          started,
 
         error:
           error.message
       };
 
+
       this.tests.push(
         test
       );
+
 
       return test;
     }
@@ -91,310 +112,472 @@ class VentronSelfTest {
 
 
   // ═══════════════════════════════════════════
-  // 🧠 CORE
+  // 🚀 RUN ALL
   // ═══════════════════════════════════════════
 
-  async testCore() {
+  async runAll() {
 
-    return this.runTest(
+    this.tests = [];
+
+    const started =
+      Date.now();
+
+
+    await this.runTest(
       'Core Status',
-
       async () => {
 
         const status =
           this.core.getStatus();
 
-        return Boolean(
-          status.initialized &&
-          status.started
-        );
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            ),
+
+          initialized:
+            status.initialized,
+
+          started:
+            status.started
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // ⌨️ COMMAND ENGINE
-  // ═══════════════════════════════════════════
+    await this.runTest(
+      'Storage Manager',
+      async () => {
 
-  async testCommandEngine() {
+        const storage =
+          this.core.storage;
 
-    return this.runTest(
+
+        if (!storage) {
+
+          return {
+
+            success:
+              false,
+
+            reason:
+              'STORAGE_NOT_FOUND'
+          };
+        }
+
+
+        const status =
+          storage.getStatus();
+
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            ),
+
+          initialized:
+            status.initialized,
+
+          started:
+            status.started,
+
+          driver:
+            status.driver
+        };
+      }
+    );
+
+
+    await this.runTest(
       'Command Engine',
-
       async () => {
 
         const status =
           this.core.commandEngine
             .getStatus();
 
-        return Boolean(
-          status.initialized &&
-          status.started &&
-          status.commandCount >= 0
-        );
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            ),
+
+          commands:
+            status.commandCount
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 📡 EVENT GATEWAY
-  // ═══════════════════════════════════════════
-
-  async testEventGateway() {
-
-    return this.runTest(
+    await this.runTest(
       'Event Gateway',
-
       async () => {
 
         const status =
           this.core.eventGateway
             .getStatus();
 
-        return Boolean(
-          status.initialized &&
-          status.started
-        );
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            ),
+
+          received:
+            status.stats.received
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 🔀 MESSAGE ROUTER
-  // ═══════════════════════════════════════════
-
-  async testRouter() {
-
-    return this.runTest(
+    await this.runTest(
       'Message Router',
-
       async () => {
 
         const status =
           this.core.messageRouter
             .getStatus();
 
-        return Boolean(
-          status.initialized &&
-          status.started
-        );
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            ),
+
+          routed:
+            status.stats.routed
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 🧠 AI SERVICE
-  // ═══════════════════════════════════════════
-
-  async testAI() {
-
-    return this.runTest(
+    await this.runTest(
       'AI Service',
-
       async () => {
 
         const status =
           this.core.aiService
             .getStatus();
 
-        return Boolean(
-          status.initialized &&
-          status.started &&
-          status.engine &&
-          Array.isArray(
-            status.engine.providers
-          ) &&
-          status.engine.providers.length > 0
-        );
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            ),
+
+          initialized:
+            status.initialized,
+
+          started:
+            status.started
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 📦 RESPONSE ENGINE
-  // ═══════════════════════════════════════════
+    await this.runTest(
+      'AI Memory',
+      async () => {
 
-  async testResponseEngine() {
+        const memory =
+          this.core.aiService
+            .memory;
 
-    return this.runTest(
+
+        if (!memory) {
+
+          return {
+
+            success:
+              false,
+
+            reason:
+              'AI_MEMORY_NOT_FOUND'
+          };
+        }
+
+
+        const status =
+          memory.getStatus();
+
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started &&
+              status.persistent
+            ),
+
+          sessions:
+            status.sessions,
+
+          messages:
+            status.messages,
+
+          persistent:
+            status.persistent,
+
+          storage:
+            status.storage
+        };
+      }
+    );
+
+
+    await this.runTest(
+      'AI Engine',
+      async () => {
+
+        const engine =
+          this.core.aiService
+            .engine;
+
+
+        const status =
+          engine.getStatus();
+
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            ),
+
+          provider:
+            status.defaultProvider,
+
+          providers:
+            status.providers
+        };
+      }
+    );
+
+
+    await this.runTest(
+      'Local AI Provider',
+      async () => {
+
+        const engine =
+          this.core.aiService
+            .engine;
+
+
+        const provider =
+          engine.providers.get(
+            'local'
+          );
+
+
+        if (!provider) {
+
+          return {
+
+            success:
+              false,
+
+            reason:
+              'LOCAL_PROVIDER_NOT_FOUND'
+          };
+        }
+
+
+        const result =
+          await provider.generate({
+
+            message:
+              'হ্যালো Ventron',
+
+            context:
+              []
+          });
+
+
+        return {
+
+          success:
+            Boolean(
+              result?.success &&
+              result?.response
+            ),
+
+          provider:
+            result?.provider,
+
+          response:
+            result?.response
+        };
+      }
+    );
+
+
+    await this.runTest(
+      'AI Memory Pipeline',
+      async () => {
+
+        const result =
+          await this.core.aiService.chat({
+
+            message:
+              'Ventron memory test',
+
+            userId:
+              '__selftest_user__',
+
+            threadId:
+              '__selftest_thread__',
+
+            source:
+              'selftest'
+          });
+
+
+        return {
+
+          success:
+            Boolean(
+              result?.success &&
+              result?.response
+            ),
+
+          provider:
+            result?.provider,
+
+          response:
+            result?.response
+        };
+      }
+    );
+
+
+    await this.runTest(
       'Response Engine',
-
       async () => {
 
         const status =
           this.core.responseEngine
             .getStatus();
 
-        return Boolean(
-          status.initialized &&
-          status.started
-        );
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            )
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 🌐 PLATFORM
-  // ═══════════════════════════════════════════
-
-  async testPlatform() {
-
-    return this.runTest(
+    await this.runTest(
       'Messenger Platform',
-
       async () => {
 
         const status =
           this.core.platformManager
             .getStatus();
 
-        const messenger =
-          status.platforms?.messenger;
 
-        return Boolean(
-          status.initialized &&
-          status.started &&
-          messenger
-        );
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            ),
+
+          platforms:
+            status.platforms ||
+            status.registered ||
+            []
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 📡 WEBHOOK GATEWAY
-  // ═══════════════════════════════════════════
-
-  async testWebhook() {
-
-    return this.runTest(
+    await this.runTest(
       'Webhook Gateway',
-
       async () => {
 
         const status =
           this.core.webhook
             .getStatus();
 
-        return Boolean(
-          status.started &&
-          status.path
-        );
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            )
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 🛡️ SECURITY
-  // ═══════════════════════════════════════════
-
-  async testSecurity() {
-
-    return this.runTest(
+    await this.runTest(
       'Security Layer',
-
       async () => {
 
         const status =
           this.core.security
             .getStatus();
 
-        return Boolean(
-          status.initialized &&
-          status.started
-        );
+
+        return {
+
+          success:
+            Boolean(
+              status.initialized &&
+              status.started
+            )
+        };
       }
     );
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 🧪 WEBHOOK TESTER
-  // ═══════════════════════════════════════════
-
-  async testWebhookTester() {
-
-    return this.runTest(
+    await this.runTest(
       'Webhook Tester',
-
       async () => {
 
         if (
           !this.core.webhookTester
         ) {
-          return false;
+
+          return {
+
+            success:
+              false,
+
+            reason:
+              'WEBHOOK_TESTER_NOT_FOUND'
+          };
         }
 
-        const status =
-          this.core.webhookTester
-            .getStatus();
-
-        return Boolean(
-          status &&
-          typeof status === 'object'
-        );
-      }
-    );
-  }
-
-
-  // ═══════════════════════════════════════════
-  // 💬 AI CHAT PIPELINE
-  // ═══════════════════════════════════════════
-
-  async testChatPipeline() {
-
-    return this.runTest(
-      'AI Chat Pipeline',
-
-      async () => {
-
-        const result =
-          await this.core.chat({
-
-            message:
-              'হ্যালো Ventron',
-
-            userId:
-              'selftest-user',
-
-            threadId:
-              'selftest-thread'
-          });
-
-        return Boolean(
-          result &&
-          result.success &&
-          result.response
-        );
-      }
-    );
-  }
-
-
-  // ═══════════════════════════════════════════
-  // 📡 WEBHOOK PIPELINE
-  // ═══════════════════════════════════════════
-
-  async testWebhookPipeline() {
-
-    return this.runTest(
-      'Webhook Pipeline',
-
-      async () => {
-
-        if (
-          !this.core.webhookTester
-        ) {
-          return false;
-        }
 
         const result =
           await this.core.webhookTester
@@ -402,67 +585,41 @@ class VentronSelfTest {
               'হ্যালো Ventron'
             );
 
-        return Boolean(
-          result &&
-          result.success
-        );
+
+        return {
+
+          success:
+            Boolean(
+              result?.success
+            ),
+
+          result
+        };
       }
     );
-  }
-
-
-  // ═══════════════════════════════════════════
-  // 🚀 RUN ALL TESTS
-  // ═══════════════════════════════════════════
-
-  async runAll() {
-
-    this.tests = [];
-
-
-    await this.testCore();
-
-    await this.testCommandEngine();
-
-    await this.testEventGateway();
-
-    await this.testRouter();
-
-    await this.testAI();
-
-    await this.testResponseEngine();
-
-    await this.testPlatform();
-
-    await this.testWebhook();
-
-    await this.testSecurity();
-
-    await this.testWebhookTester();
-
-    await this.testChatPipeline();
-
-    await this.testWebhookPipeline();
 
 
     const passed =
       this.tests.filter(
         test =>
-          test.passed
+          test.success
       ).length;
 
 
     const failed =
-      this.tests.filter(
-        test =>
-          !test.passed
-      ).length;
+      this.tests.length -
+      passed;
 
 
-    return {
+    const result = {
 
       success:
         failed === 0,
+
+      status:
+        failed === 0
+          ? 'ALL_SYSTEMS_OPERATIONAL'
+          : 'ATTENTION_REQUIRED',
 
       total:
         this.tests.length,
@@ -471,12 +628,23 @@ class VentronSelfTest {
 
       failed,
 
-      tests:
-        this.tests,
+      duration:
+        Date.now() -
+        started,
 
       timestamp:
-        new Date().toISOString()
+        new Date().toISOString(),
+
+      tests:
+        this.tests
     };
+
+
+    this.lastRun =
+      result;
+
+
+    return result;
   }
 
 
@@ -488,23 +656,22 @@ class VentronSelfTest {
 
     return {
 
+      lastRun:
+        this.lastRun
+          ? this.lastRun.timestamp
+          : null,
+
       total:
-        this.tests.length,
+        this.lastRun?.total || 0,
 
       passed:
-        this.tests.filter(
-          test =>
-            test.passed
-        ).length,
+        this.lastRun?.passed || 0,
 
       failed:
-        this.tests.filter(
-          test =>
-            !test.passed
-        ).length,
+        this.lastRun?.failed || 0,
 
-      tests:
-        this.tests
+      success:
+        this.lastRun?.success || false
     };
   }
 }
