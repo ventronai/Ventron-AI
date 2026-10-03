@@ -33,6 +33,9 @@ const VentronPlatformManager =
 const VentronMessengerAdapter =
   require('../platform/messenger');
 
+const VentronSelfTest =
+  require('./selftest');
+
 class VentronCore extends EventEmitter {
 
   constructor(config) {
@@ -76,6 +79,9 @@ class VentronCore extends EventEmitter {
 
     this.messenger =
       new VentronMessengerAdapter(config);
+
+    this.selfTest =
+      new VentronSelfTest(this);
 
     this.platformManager.register(
       'messenger',
@@ -133,7 +139,7 @@ class VentronCore extends EventEmitter {
     );
 
     // ═════════════════════════════════════════
-    // 🧠 CHAT → AI → RESPONSE
+    // 🧠 CHAT → AI → RESPONSE → PLATFORM
     // ═════════════════════════════════════════
 
     this.messageRouter.on(
@@ -214,7 +220,6 @@ class VentronCore extends EventEmitter {
             }
           );
 
-          // Messenger response
           if (
             event.source ===
             'messenger' &&
@@ -271,158 +276,4 @@ class VentronCore extends EventEmitter {
             result &&
             result.handled &&
             result.result
-          ) {
-
-            response =
-              this.responseEngine.normalize(
-                result.result,
-                {
-                  recipient:
-                    event.user?.id,
-
-                  metadata: {
-                    source:
-                      event.source,
-
-                    eventId:
-                      event.id,
-
-                    command:
-                      result.command
-                  }
-                }
-              );
-          }
-
-          this.emit(
-            'commandResponse',
-            {
-              event,
-              result,
-              response
-            }
-          );
-
-          // Messenger response
-          if (
-            event.source ===
-            'messenger' &&
-            response &&
-            response.success !== false
-          ) {
-
-            await this.platformManager.send(
-              'messenger',
-              response
-            );
-          }
-
-        } catch (error) {
-
-          this.emit(
-            'pipelineError',
-            error
-          );
-        }
-      }
-    );
-  }
-
-  // ═══════════════════════════════════════════════
-  // 🌐 PLATFORM PIPELINE
-  // ═══════════════════════════════════════════════
-
-  connectPlatformPipeline() {
-
-    this.messenger.on(
-      'event',
-      async (event) => {
-
-        try {
-
-          await this.eventGateway.receive(
-            event
-          );
-
-        } catch (error) {
-
-          this.emit(
-            'pipelineError',
-            error
-          );
-        }
-      }
-    );
-
-    this.messenger.on(
-      'error',
-      (error) => {
-
-        this.emit(
-          'pipelineError',
-          error
-        );
-      }
-    );
-
-    this.platformManager.on(
-      'sent',
-      (data) => {
-
-        this.emit(
-          'platformResponse',
-          data
-        );
-      }
-    );
-  }
-
-  // ═══════════════════════════════════════════════
-  // 🧩 MODULE SYSTEM
-  // ═══════════════════════════════════════════════
-
-  registerModule(name, module) {
-
-    if (
-      !name ||
-      typeof name !== 'string'
-    ) {
-
-      throw new TypeError(
-        'Module name must be a string.'
-      );
-    }
-
-    if (!module) {
-
-      throw new Error(
-        `Module "${name}" cannot be empty.`
-      );
-    }
-
-    if (
-      this.modules.has(name)
-    ) {
-
-      throw new Error(
-        `Module "${name}" is already registered.`
-      );
-    }
-
-    this.modules.set(
-      name,
-      module
-    );
-
-    this.emit(
-      'moduleRegistered',
-      {
-        name,
-        module
-      }
-    );
-
-    return true;
-  }
-
- 
+         
