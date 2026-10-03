@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║                VENTRON SELF TEST               ║
- * ║          COMPLETE SYSTEM DIAGNOSTICS           ║
+ * ║              VENTRON AI SELF TEST              ║
+ * ║          FULL SYSTEM DIAGNOSTIC CORE            ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -21,626 +21,735 @@ class VentronSelfTest {
       );
     }
 
-    this.core =
-      core;
+    this.core = core;
 
-    this.tests =
-      [];
+    this.lastResult = null;
 
-    this.lastRun =
-      null;
+    this.stats = {
+      runs: 0,
+      passed: 0,
+      failed: 0
+    };
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🧪 SINGLE TEST
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     SINGLE TEST HELPER
+  ═══════════════════════════════════════ */
 
-  async runTest(
+  check(
     name,
-    handler
+    condition,
+    details = null
   ) {
 
-    const started =
+    const passed =
+      Boolean(condition);
+
+    return {
+      name,
+      passed,
+      status:
+        passed
+          ? 'PASS'
+          : 'FAIL',
+      details:
+        details || (
+          passed
+            ? 'OK'
+            : 'Test condition failed.'
+        )
+    };
+  }
+
+
+  /* ═══════════════════════════════════════
+     RUN ALL TESTS
+  ═══════════════════════════════════════ */
+
+  async runAll() {
+
+    this.stats.runs++;
+
+    const startedAt =
       Date.now();
+
+    const tests = [];
+
+
+    /* ═══════════════════════════════════
+       CORE
+    ═══════════════════════════════════ */
+
+    try {
+
+      const status =
+        this.core.getStatus();
+
+      tests.push(
+        this.check(
+          'Core',
+          Boolean(status),
+          'Core status available.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Core',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       STORAGE
+    ═══════════════════════════════════ */
+
+    try {
+
+      const storage =
+        this.core.storage;
+
+      const status =
+        storage.getStatus();
+
+      tests.push(
+        this.check(
+          'Storage Manager',
+          Boolean(
+            status &&
+            status.initialized
+          ),
+          'Storage manager initialized.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Storage Manager',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       PROFILE
+    ═══════════════════════════════════ */
+
+    const testUserId =
+      '__selftest_user__';
+
+    const testThreadId =
+      '__selftest_thread__';
+
+
+    try {
+
+      const profile =
+        this.core.profile;
+
+
+      const savedUser =
+        profile.touchUser(
+          testUserId,
+          {
+            name: 'Ventron Test',
+            firstName: 'Ventron',
+            platform: 'selftest',
+            language: 'bn'
+          }
+        );
+
+
+      const savedThread =
+        profile.touchThread(
+          testThreadId,
+          {
+            name: 'Self Test Thread',
+            type: 'conversation',
+            platform: 'selftest',
+            userId: testUserId
+          }
+        );
+
+
+      const user =
+        profile.getUser(
+          testUserId
+        );
+
+
+      const thread =
+        profile.getThread(
+          testThreadId
+        );
+
+
+      tests.push(
+        this.check(
+          'Profile Manager',
+          Boolean(
+            savedUser &&
+            savedThread &&
+            user &&
+            thread
+          ),
+          'User and thread profiles are working.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Profile Manager',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       COMMAND ENGINE
+    ═══════════════════════════════════ */
+
+    try {
+
+      const status =
+        this.core.commandEngine.getStatus();
+
+
+      tests.push(
+        this.check(
+          'Command Engine',
+          Boolean(
+            status &&
+            status.initialized
+          ),
+          'Command engine initialized.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Command Engine',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       EVENT GATEWAY
+    ═══════════════════════════════════ */
+
+    try {
+
+      const status =
+        this.core.eventGateway.getStatus();
+
+
+      tests.push(
+        this.check(
+          'Event Gateway',
+          Boolean(
+            status &&
+            status.initialized
+          ),
+          'Event gateway initialized.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Event Gateway',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       MESSAGE ROUTER
+    ═══════════════════════════════════ */
+
+    try {
+
+      const status =
+        this.core.messageRouter.getStatus();
+
+
+      tests.push(
+        this.check(
+          'Message Router',
+          Boolean(
+            status &&
+            status.initialized
+          ),
+          'Message router initialized.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Message Router',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       AI ENGINE
+    ═══════════════════════════════════ */
+
+    try {
+
+      const ai =
+        this.core.aiService;
+
+      const status =
+        ai.engine.getStatus();
+
+
+      const local =
+        ai.engine.getProvider(
+          'local'
+        );
+
+
+      tests.push(
+        this.check(
+          'AI Engine',
+          Boolean(
+            status &&
+            status.initialized &&
+            local
+          ),
+          'AI Engine and Local Provider are available.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'AI Engine',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       AI MEMORY
+    ═══════════════════════════════════ */
+
+    try {
+
+      const memory =
+        this.core.aiService.memory;
+
+
+      memory.addMessage(
+        testUserId,
+        testThreadId,
+        {
+          role: 'user',
+          content: 'Ventron memory test'
+        }
+      );
+
+
+      const messages =
+        memory.getMessages(
+          testUserId,
+          testThreadId
+        );
+
+
+      const context =
+        memory.getContext(
+          testUserId,
+          testThreadId
+        );
+
+
+      tests.push(
+        this.check(
+          'AI Memory',
+          Boolean(
+            messages &&
+            messages.length > 0 &&
+            typeof context === 'string'
+          ),
+          'Persistent AI memory is working.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'AI Memory',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       AI CHAT
+    ═══════════════════════════════════ */
 
     try {
 
       const result =
-        await handler();
+        await this.core.aiService.chat({
+
+          message:
+            'হ্যালো Ventron',
+
+          userId:
+            testUserId,
+
+          threadId:
+            testThreadId,
+
+          source:
+            'selftest'
+        });
 
 
-      const passed =
-        result === true ||
-        result?.success === true;
-
-
-      const test = {
-
-        name,
-
-        success:
-          passed,
-
-        duration:
-          Date.now() -
-          started,
-
-        result:
-          typeof result === 'object'
-            ? result
-            : {
-                success:
-                  passed
-              }
-      };
-
-
-      this.tests.push(
-        test
+      tests.push(
+        this.check(
+          'AI Chat',
+          Boolean(
+            result &&
+            result.success &&
+            result.response
+          ),
+          result?.response
+            ? `AI response: ${result.response}`
+            : 'AI response was not generated.'
+        )
       );
-
-
-      return test;
 
     } catch (error) {
 
-      const test = {
-
-        name,
-
-        success:
+      tests.push(
+        this.check(
+          'AI Chat',
           false,
-
-        duration:
-          Date.now() -
-          started,
-
-        error:
           error.message
-      };
+        )
+      );
+    }
 
 
-      this.tests.push(
-        test
+    /* ═══════════════════════════════════
+       RESPONSE ENGINE
+    ═══════════════════════════════════ */
+
+    try {
+
+      const response =
+        this.core.responseEngine.normalize(
+          {
+            response:
+              'Ventron response test'
+          }
+        );
+
+
+      tests.push(
+        this.check(
+          'Response Engine',
+          Boolean(response),
+          'Response normalization is working.'
+        )
       );
 
+    } catch (error) {
 
-      return test;
+      tests.push(
+        this.check(
+          'Response Engine',
+          false,
+          error.message
+        )
+      );
     }
-  }
 
 
-  // ═══════════════════════════════════════════
-  // 🚀 RUN ALL
-  // ═══════════════════════════════════════════
+    /* ═══════════════════════════════════
+       MESSENGER PLATFORM
+    ═══════════════════════════════════ */
 
-  async runAll() {
+    try {
 
-    this.tests = [];
+      const adapter =
+        this.core.platformManager.get(
+          'messenger'
+        );
 
-    const started =
-      Date.now();
+
+      tests.push(
+        this.check(
+          'Messenger Platform',
+          Boolean(adapter),
+          'Messenger adapter is registered.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Messenger Platform',
+          false,
+          error.message
+        )
+      );
+    }
 
 
-    await this.runTest(
-      'Core Status',
-      async () => {
+    /* ═══════════════════════════════════
+       WEBHOOK
+    ═══════════════════════════════════ */
 
-        const status =
-          this.core.getStatus();
+    try {
 
-        return {
+      const status =
+        this.core.webhook.getStatus();
 
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            ),
 
-          initialized:
-            status.initialized,
+      tests.push(
+        this.check(
+          'Webhook Gateway',
+          Boolean(status),
+          'Webhook gateway is available.'
+        )
+      );
 
-          started:
-            status.started
-        };
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Webhook Gateway',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       SECURITY
+    ═══════════════════════════════════ */
+
+    try {
+
+      const status =
+        this.core.security.getStatus();
+
+
+      tests.push(
+        this.check(
+          'Security Layer',
+          Boolean(status),
+          'Security manager is available.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Security Layer',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       WEBHOOK TESTER
+    ═══════════════════════════════════ */
+
+    try {
+
+      const status =
+        this.core.webhookTester.getStatus();
+
+
+      tests.push(
+        this.check(
+          'Webhook Tester',
+          Boolean(status),
+          'Internal webhook tester is available.'
+        )
+      );
+
+    } catch (error) {
+
+      tests.push(
+        this.check(
+          'Webhook Tester',
+          false,
+          error.message
+        )
+      );
+    }
+
+
+    /* ═══════════════════════════════════
+       CLEAN TEST DATA
+    ═══════════════════════════════════ */
+
+    try {
+
+      if (
+        this.core.aiService &&
+        this.core.aiService.memory
+      ) {
+
+        this.core.aiService.memory.clearSession(
+          testUserId,
+          testThreadId
+        );
       }
-    );
 
 
-    await this.runTest(
-      'Storage Manager',
-      async () => {
+      if (
+        this.core.storage
+      ) {
 
-        const storage =
-          this.core.storage;
-
-
-        if (!storage) {
-
-          return {
-
-            success:
-              false,
-
-            reason:
-              'STORAGE_NOT_FOUND'
-          };
-        }
-
-
-        const status =
-          storage.getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            ),
-
-          initialized:
-            status.initialized,
-
-          started:
-            status.started,
-
-          driver:
-            status.driver
-        };
+        this.core.storage.deleteMemory(
+          `${testUserId}:${testThreadId}`
+        );
       }
-    );
 
 
-    await this.runTest(
-      'Command Engine',
-      async () => {
+      /*
+       * Remove self-test profile data
+       */
 
-        const status =
-          this.core.commandEngine
-            .getStatus();
+      if (
+        this.core.storage &&
+        this.core.storage.data
+      ) {
 
+        delete this.core.storage.data.users[
+          testUserId
+        ];
 
-        return {
+        delete this.core.storage.data.threads[
+          testThreadId
+        ];
 
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            ),
-
-          commands:
-            status.commandCount
-        };
+        this.core.storage.save();
       }
-    );
 
+    } catch (error) {
 
-    await this.runTest(
-      'Event Gateway',
-      async () => {
+      /*
+       * Cleanup failure does not fail
+       * the main system test.
+       */
 
-        const status =
-          this.core.eventGateway
-            .getStatus();
+    }
 
 
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            ),
-
-          received:
-            status.stats.received
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'Message Router',
-      async () => {
-
-        const status =
-          this.core.messageRouter
-            .getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            ),
-
-          routed:
-            status.stats.routed
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'AI Service',
-      async () => {
-
-        const status =
-          this.core.aiService
-            .getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            ),
-
-          initialized:
-            status.initialized,
-
-          started:
-            status.started
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'AI Memory',
-      async () => {
-
-        const memory =
-          this.core.aiService
-            .memory;
-
-
-        if (!memory) {
-
-          return {
-
-            success:
-              false,
-
-            reason:
-              'AI_MEMORY_NOT_FOUND'
-          };
-        }
-
-
-        const status =
-          memory.getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started &&
-              status.persistent
-            ),
-
-          sessions:
-            status.sessions,
-
-          messages:
-            status.messages,
-
-          persistent:
-            status.persistent,
-
-          storage:
-            status.storage
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'AI Engine',
-      async () => {
-
-        const engine =
-          this.core.aiService
-            .engine;
-
-
-        const status =
-          engine.getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            ),
-
-          provider:
-            status.defaultProvider,
-
-          providers:
-            status.providers
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'Local AI Provider',
-      async () => {
-
-        const engine =
-          this.core.aiService
-            .engine;
-
-
-        const provider =
-          engine.providers.get(
-            'local'
-          );
-
-
-        if (!provider) {
-
-          return {
-
-            success:
-              false,
-
-            reason:
-              'LOCAL_PROVIDER_NOT_FOUND'
-          };
-        }
-
-
-        const result =
-          await provider.generate({
-
-            message:
-              'হ্যালো Ventron',
-
-            context:
-              []
-          });
-
-
-        return {
-
-          success:
-            Boolean(
-              result?.success &&
-              result?.response
-            ),
-
-          provider:
-            result?.provider,
-
-          response:
-            result?.response
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'AI Memory Pipeline',
-      async () => {
-
-        const result =
-          await this.core.aiService.chat({
-
-            message:
-              'Ventron memory test',
-
-            userId:
-              '__selftest_user__',
-
-            threadId:
-              '__selftest_thread__',
-
-            source:
-              'selftest'
-          });
-
-
-        return {
-
-          success:
-            Boolean(
-              result?.success &&
-              result?.response
-            ),
-
-          provider:
-            result?.provider,
-
-          response:
-            result?.response
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'Response Engine',
-      async () => {
-
-        const status =
-          this.core.responseEngine
-            .getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            )
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'Messenger Platform',
-      async () => {
-
-        const status =
-          this.core.platformManager
-            .getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            ),
-
-          platforms:
-            status.platforms ||
-            status.registered ||
-            []
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'Webhook Gateway',
-      async () => {
-
-        const status =
-          this.core.webhook
-            .getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            )
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'Security Layer',
-      async () => {
-
-        const status =
-          this.core.security
-            .getStatus();
-
-
-        return {
-
-          success:
-            Boolean(
-              status.initialized &&
-              status.started
-            )
-        };
-      }
-    );
-
-
-    await this.runTest(
-      'Webhook Tester',
-      async () => {
-
-        if (
-          !this.core.webhookTester
-        ) {
-
-          return {
-
-            success:
-              false,
-
-            reason:
-              'WEBHOOK_TESTER_NOT_FOUND'
-          };
-        }
-
-
-        const result =
-          await this.core.webhookTester
-            .testMessage(
-              'হ্যালো Ventron'
-            );
-
-
-        return {
-
-          success:
-            Boolean(
-              result?.success
-            ),
-
-          result
-        };
-      }
-    );
-
+    /* ═══════════════════════════════════
+       FINAL RESULT
+    ═══════════════════════════════════ */
 
     const passed =
-      this.tests.filter(
-        test =>
-          test.success
+      tests.filter(
+        test => test.passed
       ).length;
 
 
     const failed =
-      this.tests.length -
-      passed;
+      tests.filter(
+        test => !test.passed
+      ).length;
+
+
+    const duration =
+      Date.now() - startedAt;
+
+
+    const success =
+      failed === 0;
+
+
+    if (success) {
+      this.stats.passed++;
+    } else {
+      this.stats.failed++;
+    }
 
 
     const result = {
 
-      success:
-        failed === 0,
+      success,
 
       status:
-        failed === 0
+        success
           ? 'ALL_SYSTEMS_OPERATIONAL'
           : 'ATTENTION_REQUIRED',
-
-      total:
-        this.tests.length,
-
-      passed,
-
-      failed,
-
-      duration:
-        Date.now() -
-        started,
 
       timestamp:
         new Date().toISOString(),
 
-      tests:
-        this.tests
+      durationMs:
+        duration,
+
+      summary: {
+
+        total:
+          tests.length,
+
+        passed,
+
+        failed
+
+      },
+
+      tests,
+
+      stats:
+        {
+          ...this.stats
+        }
     };
 
 
-    this.lastRun =
+    this.lastResult =
       result;
 
 
@@ -648,30 +757,46 @@ class VentronSelfTest {
   }
 
 
-  // ═══════════════════════════════════════════
-  // 📊 STATUS
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     LAST RESULT
+  ═══════════════════════════════════════ */
+
+  getLastResult() {
+
+    return this.lastResult;
+  }
+
+
+  /* ═══════════════════════════════════════
+     STATUS
+  ═══════════════════════════════════════ */
 
   getStatus() {
 
     return {
 
-      lastRun:
-        this.lastRun
-          ? this.lastRun.timestamp
-          : null,
-
-      total:
-        this.lastRun?.total || 0,
+      runs:
+        this.stats.runs,
 
       passed:
-        this.lastRun?.passed || 0,
+        this.stats.passed,
 
       failed:
-        this.lastRun?.failed || 0,
+        this.stats.failed,
 
-      success:
-        this.lastRun?.success || false
+      lastResult:
+        this.lastResult
+          ? {
+              success:
+                this.lastResult.success,
+
+              status:
+                this.lastResult.status,
+
+              durationMs:
+                this.lastResult.durationMs
+            }
+          : null
     };
   }
 }
