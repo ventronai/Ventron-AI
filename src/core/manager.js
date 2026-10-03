@@ -17,6 +17,10 @@ class VentronCore extends EventEmitter {
   constructor(config) {
     super();
 
+    if (!config || !config.bot) {
+      throw new Error('Valid Ventron configuration is required.');
+    }
+
     this.config = config;
 
     this.state = {
@@ -28,6 +32,10 @@ class VentronCore extends EventEmitter {
 
     this.modules = new Map();
   }
+
+  // ═════════════════════════════════════════════════
+  // 🧩 MODULE MANAGEMENT
+  // ═════════════════════════════════════════════════
 
   registerModule(name, module) {
     if (!name || typeof name !== 'string') {
@@ -74,6 +82,10 @@ class VentronCore extends EventEmitter {
     return Array.from(this.modules.keys());
   }
 
+  // ═════════════════════════════════════════════════
+  // 🚀 CORE LIFECYCLE
+  // ═════════════════════════════════════════════════
+
   initialize() {
     if (this.state.initialized) {
       return;
@@ -101,11 +113,26 @@ class VentronCore extends EventEmitter {
     this.state.startTime = Date.now();
 
     for (const [name, module] of this.modules) {
-      if (typeof module.start === 'function') {
-        await module.start(this);
-      }
+      try {
 
-      this.emit('moduleStarted', name);
+        if (typeof module.start === 'function') {
+          await module.start(this);
+        }
+
+        this.emit('moduleStarted', name);
+
+      } catch (error) {
+
+        this.emit('moduleError', {
+          name,
+          error
+        });
+
+        console.error(
+          `❌ Module "${name}" failed to start:`,
+          error.message
+        );
+      }
     }
 
     this.emit('started', {
@@ -118,12 +145,29 @@ class VentronCore extends EventEmitter {
       return;
     }
 
-    for (const [name, module] of this.modules) {
-      if (typeof module.stop === 'function') {
-        await module.stop(this);
-      }
+    const modules = Array.from(this.modules.entries()).reverse();
 
-      this.emit('moduleStopped', name);
+    for (const [name, module] of modules) {
+      try {
+
+        if (typeof module.stop === 'function') {
+          await module.stop(this);
+        }
+
+        this.emit('moduleStopped', name);
+
+      } catch (error) {
+
+        this.emit('moduleError', {
+          name,
+          error
+        });
+
+        console.error(
+          `❌ Module "${name}" failed to stop:`,
+          error.message
+        );
+      }
     }
 
     this.state.started = false;
@@ -134,14 +178,22 @@ class VentronCore extends EventEmitter {
     });
   }
 
+  // ═════════════════════════════════════════════════
+  // 📊 STATUS
+  // ═════════════════════════════════════════════════
+
   getStatus() {
     return {
+      bot: this.config.bot.name,
+      version: this.config.bot.version,
       initialized: this.state.initialized,
       started: this.state.started,
       stopped: this.state.stopped,
       modules: this.listModules(),
       uptime: this.state.startTime
-        ? Math.floor((Date.now() - this.state.startTime) / 1000)
+        ? Math.floor(
+            (Date.now() - this.state.startTime) / 1000
+          )
         : 0
     };
   }
