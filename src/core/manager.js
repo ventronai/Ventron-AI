@@ -43,6 +43,9 @@ const VentronLogger =
 const VentronSecurityManager =
   require('../security/manager');
 
+const VentronWebhookServer =
+  require('../webhook/server');
+
 
 class VentronCore extends EventEmitter {
 
@@ -64,17 +67,13 @@ class VentronCore extends EventEmitter {
 
     this.state = {
 
-      initialized:
-        false,
+      initialized: false,
 
-      started:
-        false,
+      started: false,
 
-      stopped:
-        false,
+      stopped: false,
 
-      startTime:
-        null
+      startTime: null
     };
 
     this.modules =
@@ -98,6 +97,17 @@ class VentronCore extends EventEmitter {
     this.security =
       new VentronSecurityManager(
         config
+      );
+
+
+    // ═══════════════════════════════════════════
+    // 📡 WEBHOOK GATEWAY
+    // ═══════════════════════════════════════════
+
+    this.webhook =
+      new VentronWebhookServer(
+        config,
+        this
       );
 
 
@@ -147,7 +157,7 @@ class VentronCore extends EventEmitter {
 
 
     // ═══════════════════════════════════════════
-    // 🔗 CONNECT CORE
+    // 🔗 CORE CONNECTIONS
     // ═══════════════════════════════════════════
 
     this.commandEngine.setCore(
@@ -193,12 +203,10 @@ class VentronCore extends EventEmitter {
       event?.source ||
       'unknown';
 
-
     const result =
       this.security.check(
         identifier
       );
-
 
     if (
       !result.allowed
@@ -208,6 +216,7 @@ class VentronCore extends EventEmitter {
         'Security request blocked.',
         {
           identifier,
+
           reason:
             result.reason
         }
@@ -637,9 +646,7 @@ class VentronCore extends EventEmitter {
     }
 
     if (
-      this.modules.has(
-        name
-      )
+      this.modules.has(name)
     ) {
 
       throw new Error(
@@ -724,13 +731,14 @@ class VentronCore extends EventEmitter {
     if (
       this.state.initialized
     ) {
-
       return;
     }
 
     this.logger.start();
 
     this.security.initialize();
+
+    this.webhook.start();
 
     this.logger.info(
       'Initializing Ventron Core...'
@@ -762,7 +770,10 @@ class VentronCore extends EventEmitter {
           commandStatus.loaded.length,
 
         platforms:
-          this.platformManager.list()
+          this.platformManager.list(),
+
+        webhook:
+          this.webhook.getStatus()
       }
     );
 
@@ -799,14 +810,12 @@ class VentronCore extends EventEmitter {
     if (
       !this.state.initialized
     ) {
-
       this.initialize();
     }
 
     if (
       this.state.started
     ) {
-
       return;
     }
 
@@ -830,7 +839,6 @@ class VentronCore extends EventEmitter {
 
 
     await this.commandEngine.start();
-
 
     this.emit(
       'commandEngineStarted',
@@ -995,7 +1003,6 @@ class VentronCore extends EventEmitter {
       !result ||
       !result.success
     ) {
-
       return result;
     }
 
@@ -1028,7 +1035,6 @@ class VentronCore extends EventEmitter {
       !this.state.started ||
       this.state.stopped
     ) {
-
       return;
     }
 
@@ -1101,6 +1107,7 @@ class VentronCore extends EventEmitter {
 
     await this.commandEngine.stop();
 
+    await this.webhook.stop();
 
     this.security.stop();
 
@@ -1161,6 +1168,9 @@ class VentronCore extends EventEmitter {
 
       security:
         this.security.getStatus(),
+
+      webhook:
+        this.webhook.getStatus(),
 
       commandEngine:
         this.commandEngine.getStatus(),
