@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║                VENTRON AI CORE                  ║
- * ║          CENTRAL SYSTEM CONTROLLER              ║
+ * ║              VENTRON CORE MANAGER              ║
+ * ║          CENTRAL SYSTEM CONTROLLER             ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -12,32 +12,30 @@
 
 const EventEmitter = require('events');
 
-const config = require('../../config');
+const Logger = require('./logger');
+const Security = require('../security/manager');
+const Storage = require('../storage/manager');
+const Profile = require('../storage/profile');
 
-const VentronLogger = require('./logger');
-const VentronSecurityManager = require('../security/manager');
-const VentronStorageManager = require('../storage/manager');
-const VentronProfileManager = require('../storage/profile');
+const WebhookServer = require('../webhook/server');
+const WebhookTester = require('../webhook/test');
 
-const VentronWebhookServer = require('../webhook/server');
-const VentronWebhookTester = require('../webhook/test');
+const CommandEngine = require('../commands/engine');
+const EventGateway = require('../events/gateway');
+const MessageRouter = require('../events/router');
 
-const VentronCommandEngine = require('../commands/engine');
-const VentronEventGateway = require('../events/gateway');
-const VentronMessageRouter = require('../events/router');
+const AIService = require('../ai/service');
+const ResponseEngine = require('../response/engine');
 
-const VentronAIService = require('../ai/service');
-const VentronResponseEngine = require('../response/engine');
+const PlatformManager = require('../platform/manager');
+const MessengerAdapter = require('../platform/messenger');
 
-const VentronPlatformManager = require('../platform/manager');
-const VentronMessengerAdapter = require('../platform/messenger');
-
-const VentronSelfTest = require('./selftest');
+const SelfTest = require('./selftest');
 
 
 class VentronCore extends EventEmitter {
 
-  constructor() {
+  constructor(config = require('../../config')) {
 
     super();
 
@@ -51,20 +49,20 @@ class VentronCore extends EventEmitter {
 
 
     /* ═══════════════════════════════════════
-       CORE SERVICES
+       CORE SYSTEMS
     ═══════════════════════════════════════ */
 
     this.logger =
-      new VentronLogger(config);
+      new Logger(config);
 
     this.security =
-      new VentronSecurityManager(config);
+      new Security(config);
 
     this.storage =
-      new VentronStorageManager(config);
+      new Storage(config);
 
     this.profile =
-      new VentronProfileManager(
+      new Profile(
         this.storage
       );
 
@@ -74,64 +72,78 @@ class VentronCore extends EventEmitter {
     ═══════════════════════════════════════ */
 
     this.webhook =
-      new VentronWebhookServer(
-        config,
-        this
+      new WebhookServer(
+        config
       );
 
     this.webhookTester =
-      new VentronWebhookTester(
+      new WebhookTester(
         this
       );
 
 
     /* ═══════════════════════════════════════
-       COMMAND / EVENT SYSTEM
+       EVENTS
+    ═══════════════════════════════════════ */
+
+    this.eventGateway =
+      new EventGateway(
+        config
+      );
+
+    this.messageRouter =
+      new MessageRouter(
+        config
+      );
+
+
+    /* ═══════════════════════════════════════
+       COMMANDS
     ═══════════════════════════════════════ */
 
     this.commandEngine =
-      new VentronCommandEngine(config);
-
-    this.eventGateway =
-      new VentronEventGateway(config);
-
-    this.messageRouter =
-      new VentronMessageRouter(config);
+      new CommandEngine(
+        config
+      );
 
 
     /* ═══════════════════════════════════════
-       AI SYSTEM
+       AI
     ═══════════════════════════════════════ */
 
     this.aiService =
-      new VentronAIService(config);
+      new AIService(
+        config
+      );
 
-    this.aiService.setCore(this);
+    this.aiService.setCore(
+      this
+    );
 
 
     /* ═══════════════════════════════════════
-       RESPONSE SYSTEM
+       RESPONSE
     ═══════════════════════════════════════ */
 
     this.responseEngine =
-      new VentronResponseEngine(config);
+      new ResponseEngine(
+        config
+      );
 
 
     /* ═══════════════════════════════════════
-       PLATFORM SYSTEM
+       PLATFORM
     ═══════════════════════════════════════ */
 
     this.platformManager =
-      new VentronPlatformManager(config);
+      new PlatformManager(
+        config
+      );
 
     this.messenger =
-      new VentronMessengerAdapter(config);
-
-
-    this.platformManager.register(
-      'messenger',
-      this.messenger
-    );
+      new MessengerAdapter(
+        config
+      );
 
 
     /* ═══════════════════════════════════════
@@ -139,123 +151,83 @@ class VentronCore extends EventEmitter {
     ═══════════════════════════════════════ */
 
     this.selfTest =
-      new VentronSelfTest(this);
+      new SelfTest(
+        this
+      );
 
 
     /* ═══════════════════════════════════════
-       INTERNAL CONNECTIONS
+       CONNECT COMPONENTS
     ═══════════════════════════════════════ */
 
-    this.commandEngine.setCore(this);
+    this.commandEngine.setCore(
+      this
+    );
+
+
+    this.webhook.setCore(
+      this
+    );
+
 
     this.connectPipelines();
+
   }
 
 
   /* ═══════════════════════════════════════
-     PIPELINE CONNECTION
+     PIPELINES
   ═══════════════════════════════════════ */
 
   connectPipelines() {
 
     /*
-     * Platform → Event Gateway
+     * Event Gateway → Router
+     */
+
+    this.eventGateway.on(
+      'event',
+      async event => {
+
+        try {
+
+          await this.messageRouter.route(
+            event
+          );
+
+        } catch (error) {
+
+          this.logger.error(
+            'Message router error:',
+            error
+          );
+
+        }
+
+      }
+    );
+
+
+    /*
+     * Platform → Core
      */
 
     this.platformManager.on(
       'event',
-      async (event) => {
+      async event => {
 
         try {
 
-          this.trackProfile(event);
-
-          await this.eventGateway.receive(
-            event
+          await this.receiveFromPlatform(
+            event.platform || 'unknown',
+            event.payload || event
           );
 
         } catch (error) {
 
           this.logger.error(
-            `Platform event error: ${error.message}`
-          );
-
-        }
-
-      }
-    );
-
-
-    /*
-     * Event Gateway → Message Router
-     */
-
-    this.eventGateway.on(
-      'message',
-      async (event) => {
-
-        try {
-
-          await this.messageRouter.route(
-            event
-          );
-
-        } catch (error) {
-
-          this.logger.error(
-            `Message routing error: ${error.message}`
-          );
-
-        }
-
-      }
-    );
-
-
-    /*
-     * Command → Command Engine
-     */
-
-    this.eventGateway.on(
-      'command',
-      async (event) => {
-
-        try {
-
-          await this.messageRouter.route(
-            event
-          );
-
-        } catch (error) {
-
-          this.logger.error(
-            `Command routing error: ${error.message}`
-          );
-
-        }
-
-      }
-    );
-
-
-    /*
-     * Event → Router
-     */
-
-    this.eventGateway.on(
-      'event',
-      async (event) => {
-
-        try {
-
-          await this.messageRouter.route(
-            event
-          );
-
-        } catch (error) {
-
-          this.logger.error(
-            `Event routing error: ${error.message}`
+            'Platform event error:',
+            error
           );
 
         }
@@ -270,20 +242,19 @@ class VentronCore extends EventEmitter {
 
     this.messageRouter.on(
       'command',
-      async (event) => {
+      async context => {
 
         try {
 
           await this.commandEngine.execute(
-            event.command,
-            event.args || [],
-            event
+            context
           );
 
         } catch (error) {
 
           this.logger.error(
-            `Command execution error: ${error.message}`
+            'Command execution error:',
+            error
           );
 
         }
@@ -293,199 +264,98 @@ class VentronCore extends EventEmitter {
 
 
     /*
-     * Router → AI Chat
+     * Router → AI
      */
 
     this.messageRouter.on(
       'chat',
-      async (event) => {
+      async context => {
 
         try {
 
           const result =
-            await this.aiService.chat({
-
-              message:
-                event.text ||
-                event.message ||
-                '',
-
-              userId:
-                event.userId ||
-                event.senderId ||
-                event.sender?.id,
-
-              threadId:
-                event.threadId ||
-                event.thread?.id,
-
-              source:
-                event.source ||
-                'internal',
-
-              metadata:
-                event.metadata ||
-                {}
-
-            });
-
-
-          const response =
-            this.responseEngine.normalize(
-              result
+            await this.aiService.chat(
+              context
             );
 
 
           if (
-            event.platform &&
-            event.threadId
+            result &&
+            result.success
           ) {
 
-            await this.sendToPlatform(
-              event.platform,
-              event.threadId,
-              response
+            this.emit(
+              'response',
+              result
             );
 
           }
 
-          this.emit(
-            'aiResponse',
-            {
-              event,
-              result,
-              response
-            }
-          );
-
         } catch (error) {
 
           this.logger.error(
-            `AI chat error: ${error.message}`
+            'AI pipeline error:',
+            error
           );
 
         }
 
       }
     );
-  }
 
 
-  /* ═══════════════════════════════════════
-     PROFILE TRACKING
-  ═══════════════════════════════════════ */
+    /*
+     * Command → Response
+     */
 
-  trackProfile(event = {}) {
+    this.commandEngine.on(
+      'response',
+      response => {
 
-    try {
-
-      const userId =
-        event.userId ||
-        event.senderId ||
-        event.sender?.id ||
-        event.user?.id;
-
-      const threadId =
-        event.threadId ||
-        event.thread?.id ||
-        event.conversationId;
-
-      const source =
-        event.source ||
-        event.platform ||
-        'unknown';
-
-
-      /*
-       * USER PROFILE
-       */
-
-      if (userId) {
-
-        this.profile.touchUser(
-          userId,
-          {
-
-            name:
-              event.user?.name ||
-              event.sender?.name ||
-              event.name ||
-              null,
-
-            firstName:
-              event.user?.firstName ||
-              event.sender?.firstName ||
-              null,
-
-            lastName:
-              event.user?.lastName ||
-              event.sender?.lastName ||
-              null,
-
-            platform:
-              source,
-
-            metadata:
-              {
-                lastMessageAt:
-                  new Date().toISOString()
-              }
-
-          }
+        this.emit(
+          'response',
+          response
         );
 
       }
+    );
 
 
-      /*
-       * THREAD PROFILE
-       */
+    /*
+     * Response → Platform
+     */
 
-      if (threadId) {
+    this.on(
+      'response',
+      async response => {
 
-        this.profile.touchThread(
-          threadId,
-          {
+        try {
 
-            platform:
-              source,
-
-            userId:
-              userId || null,
-
-            type:
-              event.thread?.type ||
-              'conversation',
-
-            name:
-              event.thread?.name ||
-              null,
-
-            metadata:
-              {
-                lastEventType:
-                  event.type ||
-                  'message',
-
-                lastActivityAt:
-                  new Date().toISOString()
-              }
-
+          if (
+            !response ||
+            !response.platform
+          ) {
+            return;
           }
-        );
+
+
+          await this.platformManager.send(
+            response.platform,
+            response
+          );
+
+        } catch (error) {
+
+          this.logger.error(
+            'Response delivery error:',
+            error
+          );
+
+        }
 
       }
+    );
 
-      return true;
-
-    } catch (error) {
-
-      this.logger.error(
-        `Profile tracking error: ${error.message}`
-      );
-
-      return false;
-    }
   }
 
 
@@ -495,43 +365,44 @@ class VentronCore extends EventEmitter {
 
   async initialize() {
 
-    if (this.state.initialized) {
-      return;
+    if (
+      this.state.initialized
+    ) {
+
+      return true;
     }
 
 
-    this.logger.initialize();
+    await this.logger.initialize();
 
+    await this.security.initialize();
 
-    this.security.initialize();
+    await this.storage.initialize();
 
-
-    this.storage.initialize();
-
+    await this.profile.storage.initialize();
 
     await this.commandEngine.initialize();
 
-
     await this.eventGateway.initialize();
-
 
     await this.messageRouter.initialize();
 
-
     await this.aiService.initialize();
-
 
     await this.responseEngine.initialize();
 
-
     await this.platformManager.initialize();
 
+    await this.messenger.initialize();
 
     await this.webhook.initialize();
 
 
-    this.state.initialized = true;
-    this.state.stopped = false;
+    this.state.initialized =
+      true;
+
+    this.state.stopped =
+      false;
 
 
     this.logger.info(
@@ -539,10 +410,7 @@ class VentronCore extends EventEmitter {
     );
 
 
-    return {
-      success: true,
-      status: 'initialized'
-    };
+    return true;
   }
 
 
@@ -552,47 +420,50 @@ class VentronCore extends EventEmitter {
 
   async start() {
 
-    if (!this.state.initialized) {
+    if (
+      !this.state.initialized
+    ) {
+
       await this.initialize();
     }
 
-    if (this.state.started) {
-      return;
+
+    if (
+      this.state.started
+    ) {
+
+      return true;
     }
 
 
-    this.security.start();
+    await this.logger.start();
 
+    await this.security.start();
 
     await this.storage.start();
 
-
     await this.commandEngine.start();
-
 
     await this.eventGateway.start();
 
-
     await this.messageRouter.start();
-
 
     await this.aiService.start();
 
-
     await this.responseEngine.start();
-
 
     await this.platformManager.start();
 
+    await this.messenger.start();
 
     await this.webhook.start();
 
 
-    this.state.started = true;
-    this.state.stopped = false;
+    this.state.started =
+      true;
 
-
-    this.logger.start();
+    this.state.stopped =
+      false;
 
 
     this.logger.info(
@@ -605,10 +476,7 @@ class VentronCore extends EventEmitter {
     );
 
 
-    return {
-      success: true,
-      status: 'online'
-    };
+    return true;
   }
 
 
@@ -621,33 +489,42 @@ class VentronCore extends EventEmitter {
     payload
   ) {
 
-    if (!platform) {
-      throw new Error(
-        'Platform is required.'
-      );
+    if (
+      !payload
+    ) {
+
+      return {
+        success: false,
+        error: 'EMPTY_PAYLOAD'
+      };
     }
 
 
     const adapter =
-      this.platformManager.get(
-        platform
-      );
+      platform === 'messenger'
+        ? this.messenger
+        : null;
 
 
-    if (!adapter) {
-      throw new Error(
-        `Platform not found: ${platform}`
-      );
+    let event =
+      payload;
+
+
+    if (
+      adapter &&
+      typeof adapter.normalize === 'function'
+    ) {
+
+      event =
+        adapter.normalize(
+          payload
+        );
     }
 
 
-    const event =
-      adapter.normalize(
-        payload
-      );
-
-
-    this.trackProfile(event);
+    this.trackProfile(
+      event
+    );
 
 
     return this.eventGateway.receive(
@@ -657,61 +534,70 @@ class VentronCore extends EventEmitter {
 
 
   /* ═══════════════════════════════════════
-     SEND TO PLATFORM
+     PROFILE TRACKING
   ═══════════════════════════════════════ */
 
-  async sendToPlatform(
-    platform,
-    threadId,
-    response
+  trackProfile(
+    event
   ) {
 
-    if (!platform) {
-      throw new Error(
-        'Platform is required.'
+    if (
+      !event
+    ) {
+
+      return;
+    }
+
+
+    const userId =
+      event.userId ||
+      event.senderId;
+
+
+    const threadId =
+      event.threadId ||
+      event.conversationId;
+
+
+    if (
+      userId
+    ) {
+
+      this.profile.touchUser(
+        userId,
+        {
+          name:
+            event.userName,
+
+          firstName:
+            event.firstName,
+
+          lastName:
+            event.lastName,
+
+          platform:
+            event.platform || 'unknown'
+        }
       );
     }
 
 
-    const adapter =
-      this.platformManager.get(
-        platform
-      );
+    if (
+      threadId
+    ) {
 
+      this.profile.touchThread(
+        threadId,
+        {
+          userId:
+            userId || null,
 
-    if (!adapter) {
-      throw new Error(
-        `Platform not found: ${platform}`
+          platform:
+            event.platform || 'unknown'
+        }
       );
     }
 
-
-    return adapter.send(
-      threadId,
-      response
-    );
-  }
-
-
-  /* ═══════════════════════════════════════
-     INTERNAL CHAT
-  ═══════════════════════════════════════ */
-
-  async chat(input = {}) {
-
-    return this.aiService.chat(
-      input
-    );
-  }
-
-
-  /* ═══════════════════════════════════════
-     WEBHOOK TEST
-  ═══════════════════════════════════════ */
-
-  async runWebhookTest() {
-
-    return this.webhookTester.runAll();
   }
 
 
@@ -733,62 +619,57 @@ class VentronCore extends EventEmitter {
 
     return {
 
-      initialized:
-        this.state.initialized,
+      name:
+        this.config.bot.name,
+
+      version:
+        this.config.bot.version,
+
+      state: {
+        ...this.state
+      },
 
       started:
         this.state.started,
 
-      stopped:
-        this.state.stopped,
-
-
-      bot:
-        this.config.bot,
-
-
-      logger:
-        this.logger.getStatus(),
-
+      initialized:
+        this.state.initialized,
 
       security:
         this.security.getStatus(),
 
-
       storage:
         this.storage.getStatus(),
-
 
       profile:
         this.profile.getStatus(),
 
-
       commands:
         this.commandEngine.getStatus(),
-
 
       events:
         this.eventGateway.getStatus(),
 
-
       router:
         this.messageRouter.getStatus(),
-
 
       ai:
         this.aiService.getStatus(),
 
-
       response:
         this.responseEngine.getStatus(),
 
-
-      platforms:
+      platform:
         this.platformManager.getStatus(),
 
+      messenger:
+        this.messenger.getStatus(),
 
       webhook:
-        this.webhook.getStatus()
+        this.webhook.getStatus(),
+
+      logger:
+        this.logger.getStatus()
 
     };
   }
@@ -800,8 +681,11 @@ class VentronCore extends EventEmitter {
 
   async stop() {
 
-    if (!this.state.started) {
-      return;
+    if (
+      this.state.stopped
+    ) {
+
+      return true;
     }
 
 
@@ -809,41 +693,32 @@ class VentronCore extends EventEmitter {
 
       await this.webhook.stop();
 
+      await this.messenger.stop();
 
       await this.platformManager.stop();
 
-
       await this.responseEngine.stop();
-
 
       await this.aiService.stop();
 
-
       await this.messageRouter.stop();
-
 
       await this.eventGateway.stop();
 
-
       await this.commandEngine.stop();
-
 
       await this.storage.stop();
 
+      await this.security.stop();
 
-      this.security.stop();
-
-
-      this.logger.info(
-        'Ventron Core stopped.'
-      );
+      await this.logger.stop();
 
 
-      this.logger.stop();
+      this.state.started =
+        false;
 
-
-      this.state.started = false;
-      this.state.stopped = true;
+      this.state.stopped =
+        true;
 
 
       this.emit(
@@ -851,15 +726,20 @@ class VentronCore extends EventEmitter {
       );
 
 
+      return true;
+
     } catch (error) {
 
       this.logger.error(
-        `Core shutdown error: ${error.message}`
+        'Ventron shutdown error:',
+        error
       );
+
 
       throw error;
     }
   }
+
 }
 
 
