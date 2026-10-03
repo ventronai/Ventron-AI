@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║                 VENTRON AI SERVICE             ║
- * ║          AI + MEMORY + STORAGE BRIDGE          ║
+ * ║                VENTRON AI SERVICE              ║
+ * ║        PROFILE + MEMORY + AI ENGINE            ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -27,76 +27,41 @@ class VentronAIService {
       );
     }
 
-    this.config =
-      config;
+    this.config = config;
 
-    this.state = {
-
-      initialized:
-        false,
-
-      started:
-        false
-    };
-
-
-    // ═══════════════════════════════════════════
-    // 🧠 AI ENGINE
-    // ═══════════════════════════════════════════
+    this.core = null;
 
     this.engine =
-      new VentronAIEngine(
-        config
-      );
-
-
-    // ═══════════════════════════════════════════
-    // 💭 AI MEMORY
-    // ═══════════════════════════════════════════
+      new VentronAIEngine(config);
 
     this.memory =
-      new VentronAIMemory(
-        config
-      );
+      new VentronAIMemory(config);
 
+    this.profile = null;
 
-    this.core =
-      null;
-
-
-    this.stats = {
-
-      requests:
-        0,
-
-      responses:
-        0,
-
-      failures:
-        0
+    this.state = {
+      initialized: false,
+      started: false,
+      stopped: false
     };
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🔗 CORE CONNECTION
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     CONNECT CORE
+  ═══════════════════════════════════════ */
 
   setCore(core) {
 
-    if (!core) {
+    this.core = core;
 
-      throw new Error(
-        'Ventron Core instance is required.'
-      );
-    }
+    /*
+     * Connect persistent storage
+     * to AI Memory.
+     */
 
-    this.core =
-      core;
-
-
-    // Connect persistent storage
     if (
+      core &&
       core.storage
     ) {
 
@@ -106,27 +71,43 @@ class VentronAIService {
     }
 
 
-    return true;
+    /*
+     * Connect Profile Manager.
+     */
+
+    if (
+      core &&
+      core.profile
+    ) {
+
+      this.profile =
+        core.profile;
+    }
+
+
+    return this;
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🚀 INITIALIZE
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     INITIALIZE
+  ═══════════════════════════════════════ */
 
-  initialize() {
+  async initialize() {
 
-    if (
-      this.state.initialized
-    ) {
+    if (this.state.initialized) {
       return;
     }
 
 
-    // Make sure storage is connected
+    /*
+     * Ensure storage connection.
+     */
+
     if (
-      this.core?.storage &&
-      !this.memory.storage
+      !this.memory.storage &&
+      this.core &&
+      this.core.storage
     ) {
 
       this.memory.setStorage(
@@ -135,269 +116,377 @@ class VentronAIService {
     }
 
 
-    this.engine.initialize();
+    /*
+     * Ensure profile connection.
+     */
 
-    this.memory.initialize();
+    if (
+      !this.profile &&
+      this.core &&
+      this.core.profile
+    ) {
+
+      this.profile =
+        this.core.profile;
+    }
 
 
-    this.state.initialized =
-      true;
+    await this.engine.initialize();
+
+
+    await this.memory.initialize();
+
+
+    this.state.initialized = true;
+    this.state.stopped = false;
 
 
     return {
-
-      success:
-        true,
-
-      status:
-        'initialized'
+      success: true,
+      status: 'initialized'
     };
   }
 
 
-  // ═══════════════════════════════════════════
-  // ⚡ START
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     START
+  ═══════════════════════════════════════ */
 
   async start() {
 
-    if (
-      !this.state.initialized
-    ) {
-      this.initialize();
+    if (!this.state.initialized) {
+      await this.initialize();
     }
 
 
-    if (
-      this.state.started
-    ) {
+    if (this.state.started) {
       return;
     }
 
 
     await this.engine.start();
 
+
     await this.memory.start();
 
 
-    this.state.started =
-      true;
+    this.state.started = true;
+    this.state.stopped = false;
 
 
     return {
-
-      success:
-        true,
-
-      status:
-        'online'
+      success: true,
+      status: 'online'
     };
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🧠 CHAT
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     CHAT
+  ═══════════════════════════════════════ */
 
   async chat(input = {}) {
 
-    this.stats.requests++;
+    if (!this.state.started) {
+
+      await this.start();
+    }
 
 
-    try {
-
-      const message =
-        String(
-          input.message || ''
-        ).trim();
-
-
-      if (!message) {
-
-        this.stats.failures++;
-
-        return {
-
-          success:
-            false,
-
-          reason:
-            'EMPTY_MESSAGE',
-
-          response:
-            'কোনো মেসেজ পাওয়া যায়নি।'
-        };
-      }
+    const message =
+      String(
+        input.message ||
+        input.text ||
+        ''
+      ).trim();
 
 
-      const userId =
-        String(
-          input.userId ||
-          input.user?.id ||
-          'unknown'
+    if (!message) {
+
+      return {
+        success: false,
+        error: 'AI_MESSAGE_EMPTY'
+      };
+    }
+
+
+    const userId =
+      input.userId ||
+      input.senderId ||
+      null;
+
+
+    const threadId =
+      input.threadId ||
+      input.conversationId ||
+      null;
+
+
+    const source =
+      input.source ||
+      input.platform ||
+      'internal';
+
+
+    /*
+     * ═══════════════════════════════════
+     * PROFILE INFORMATION
+     * ═══════════════════════════════════
+     */
+
+    let userProfile = null;
+    let threadProfile = null;
+
+
+    if (
+      this.profile &&
+      userId
+    ) {
+
+      userProfile =
+        this.profile.getUser(
+          userId
         );
 
 
-      const threadId =
-        String(
-          input.threadId ||
-          input.thread?.id ||
-          'default'
-        );
+      /*
+       * Create / update user profile.
+       */
 
-
-      // ═════════════════════════════════════════
-      // 📚 LOAD PREVIOUS MEMORY
-      // ═════════════════════════════════════════
-
-      const context =
-        this.memory.getContext(
-          userId,
-          threadId
-        );
-
-
-      // ═════════════════════════════════════════
-      // 💾 SAVE USER MESSAGE
-      // ═════════════════════════════════════════
-
-      this.memory.addMessage(
+      this.profile.touchUser(
         userId,
-        threadId,
-        'user',
-        message,
         {
-          source:
-            input.source ||
-            input.context?.source ||
-            'unknown'
+
+          platform:
+            source,
+
+          language:
+            input.language ||
+            userProfile?.language ||
+            'bn',
+
+          metadata:
+            {
+              lastAIMessageAt:
+                new Date().toISOString()
+            }
+
         }
       );
 
 
-      // ═════════════════════════════════════════
-      // 🤖 AI ENGINE
-      // ═════════════════════════════════════════
+      userProfile =
+        this.profile.getUser(
+          userId
+        );
+    }
 
-      const result =
-        await this.engine.chat({
 
-          message,
+    if (
+      this.profile &&
+      threadId
+    ) {
 
-          context,
+      threadProfile =
+        this.profile.getThread(
+          threadId
+        );
 
-          userId,
 
-          threadId,
+      /*
+       * Create / update thread profile.
+       */
 
-          user:
-            input.user || null,
+      this.profile.touchThread(
+        threadId,
+        {
 
-          thread:
-            input.thread || null,
+          platform:
+            source,
+
+          userId:
+            userId,
+
+          type:
+            input.threadType ||
+            threadProfile?.type ||
+            'conversation',
 
           metadata:
-            input.metadata || {}
-        });
+            {
+              lastAIActivityAt:
+                new Date().toISOString()
+            }
+
+        }
+      );
 
 
-      if (
-        !result ||
-        !result.success
-      ) {
-
-        this.stats.failures++;
-
-        return {
-
-          success:
-            false,
-
-          reason:
-            result?.reason ||
-            'AI_ENGINE_FAILED',
-
-          response:
-            result?.response ||
-            'দুঃখিত, এই মুহূর্তে AI response তৈরি করা যাচ্ছে না।'
-        };
-      }
-
-
-      const response =
-        String(
-          result.response || ''
-        ).trim();
-
-
-      // ═════════════════════════════════════════
-      // 💾 SAVE AI RESPONSE
-      // ═════════════════════════════════════════
-
-      if (response) {
-
-        this.memory.addMessage(
-          userId,
-          threadId,
-          'assistant',
-          response,
-          {
-            provider:
-              result.provider ||
-              null
-          }
+      threadProfile =
+        this.profile.getThread(
+          threadId
         );
+    }
+
+
+    /*
+     * ═══════════════════════════════════
+     * LOAD MEMORY CONTEXT
+     * ═══════════════════════════════════
+     */
+
+    const memoryContext =
+      this.memory.getContext(
+        userId,
+        threadId
+      );
+
+
+    const history =
+      this.memory.getMessages(
+        userId,
+        threadId
+      );
+
+
+    /*
+     * ═══════════════════════════════════
+     * SAVE USER MESSAGE
+     * ═══════════════════════════════════
+     */
+
+    this.memory.addMessage(
+      userId,
+      threadId,
+      {
+        role: 'user',
+        content: message,
+        timestamp:
+          new Date().toISOString()
       }
+    );
 
 
-      this.stats.responses++;
+    /*
+     * ═══════════════════════════════════
+     * BUILD AI CONTEXT
+     * ═══════════════════════════════════
+     */
+
+    const profileContext = {
+
+      user:
+        userProfile || null,
+
+      thread:
+        threadProfile || null,
+
+      language:
+        input.language ||
+        userProfile?.language ||
+        'bn',
+
+      source
+    };
 
 
-      return {
+    /*
+     * ═══════════════════════════════════
+     * GENERATE AI RESPONSE
+     * ═══════════════════════════════════
+     */
 
-        success:
-          true,
+    const result =
+      await this.engine.chat({
 
-        response,
+        message,
 
-        provider:
-          result.provider ||
-          null,
+        context:
+          memoryContext,
+
+        history,
 
         userId,
 
         threadId,
 
-        memory:
-          this.memory.getStatus()
-      };
+        provider:
+          input.provider,
 
-    } catch (error) {
+        metadata:
+          {
+            ...(input.metadata || {}),
 
-      this.stats.failures++;
+            profile:
+              profileContext
+          }
+
+      });
 
 
-      return {
+    const response =
+      result?.response ||
+      result?.text ||
+      '';
 
-        success:
-          false,
 
-        reason:
-          'AI_SERVICE_ERROR',
+    /*
+     * ═══════════════════════════════════
+     * SAVE AI RESPONSE TO MEMORY
+     * ═══════════════════════════════════
+     */
 
-        error:
-          error.message,
+    if (
+      result?.success !== false &&
+      response
+    ) {
 
-        response:
-          'AI service-এ একটি সমস্যা হয়েছে।'
-      };
+      this.memory.addMessage(
+        userId,
+        threadId,
+        {
+          role: 'assistant',
+          content: response,
+          timestamp:
+            new Date().toISOString()
+        }
+      );
     }
+
+
+    /*
+     * ═══════════════════════════════════
+     * FINAL RESULT
+     * ═══════════════════════════════════
+     */
+
+    return {
+
+      success:
+        result?.success !== false,
+
+      response,
+
+      provider:
+        result?.provider ||
+        this.engine.defaultProvider,
+
+      userId,
+
+      threadId,
+
+      profile:
+        profileContext,
+
+      memory:
+        this.memory.getStatus()
+    };
   }
 
 
-  // ═══════════════════════════════════════════
-  // 💭 MEMORY ACCESS
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     MEMORY ACCESS
+  ═══════════════════════════════════════ */
 
   getMemory(
     userId,
@@ -405,6 +494,18 @@ class VentronAIService {
   ) {
 
     return this.memory.getMessages(
+      userId,
+      threadId
+    );
+  }
+
+
+  getMemoryContext(
+    userId,
+    threadId
+  ) {
+
+    return this.memory.getContext(
       userId,
       threadId
     );
@@ -423,15 +524,47 @@ class VentronAIService {
   }
 
 
-  clearAllMemory() {
+  /* ═══════════════════════════════════════
+     PROFILE ACCESS
+  ═══════════════════════════════════════ */
 
-    return this.memory.clearAll();
+  getProfile(userId) {
+
+    if (
+      !this.profile ||
+      !userId
+    ) {
+
+      return null;
+    }
+
+
+    return this.profile.getUser(
+      userId
+    );
   }
 
 
-  // ═══════════════════════════════════════════
-  // 📊 STATUS
-  // ═══════════════════════════════════════════
+  getThreadProfile(threadId) {
+
+    if (
+      !this.profile ||
+      !threadId
+    ) {
+
+      return null;
+    }
+
+
+    return this.profile.getThread(
+      threadId
+    );
+  }
+
+
+  /* ═══════════════════════════════════════
+     STATUS
+  ═══════════════════════════════════════ */
 
   getStatus() {
 
@@ -443,40 +576,54 @@ class VentronAIService {
       started:
         this.state.started,
 
+      stopped:
+        this.state.stopped,
+
+
       engine:
         this.engine.getStatus(),
+
 
       memory:
         this.memory.getStatus(),
 
-      stats:
-        {
-          ...this.stats
-        }
+
+      profile:
+        this.profile
+          ? this.profile.getStatus()
+          : {
+              connected: false
+            }
+
     };
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🛑 STOP
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     STOP
+  ═══════════════════════════════════════ */
 
   async stop() {
 
-    if (
-      !this.state.started
-    ) {
+    if (!this.state.started) {
       return;
     }
 
 
     await this.memory.stop();
 
+
     await this.engine.stop();
 
 
-    this.state.started =
-      false;
+    this.state.started = false;
+    this.state.stopped = true;
+
+
+    return {
+      success: true,
+      status: 'stopped'
+    };
   }
 }
 
