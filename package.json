@@ -1,21 +1,23 @@
 {
   "name": "ventron-ai",
   "version": "0.1.0",
-  "description": "Ventron AI — A next-generation futuristic AI bot framework.",
+  "description": "Ventron AI — Next-generation futuristic AI bot framework.",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "server": "node server.js",
+    "dev": "node --watch index.js",
+    "dev:server": "node --watch server.js"
   },
   "keywords": [
     "ventron-ai",
     "ai",
     "bot",
     "messenger",
-    "automation",
     "api",
-    "futuristic"
+    "futuristic",
+    "automation"
   ],
   "author": "Zihad",
   "license": "MIT",
