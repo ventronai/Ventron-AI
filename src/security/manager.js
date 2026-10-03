@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║             VENTRON SECURITY MANAGER           ║
- * ║          Runtime Protection & Guard Layer       ║
+ * ║             VENTRON SECURITY MANAGER            ║
+ * ║          RATE LIMIT + SECURITY CONTROL          ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -12,26 +12,19 @@
 
 class VentronSecurityManager {
 
-  constructor(config) {
-
-    if (!config) {
-      throw new Error(
-        'Ventron configuration is required.'
-      );
-    }
+  constructor(config = {}) {
 
     this.config = config;
 
-    this.state = {
-      initialized: false,
-      started: false
-    };
+    this.requests = new Map();
 
-    this.requests =
-      new Map();
+    this.initialized = false;
+    this.started = false;
+
+    this.cleanupTimer = null;
 
     this.stats = {
-      checked: 0,
+      totalChecks: 0,
       allowed: 0,
       blocked: 0,
       cleaned: 0
@@ -39,108 +32,129 @@ class VentronSecurityManager {
 
     this.maxRequests =
       Number(
-        config.security?.maxRequests
-      ) || 30;
+        process.env.MAX_REQUESTS ||
+        config.security?.maxRequests ||
+        30
+      );
 
     this.cooldown =
       Number(
-        config.security?.cooldown
-      ) || 3000;
+        process.env.COOLDOWN ||
+        config.security?.cooldown ||
+        3000
+      );
+
+    this.cleanupInterval =
+      Number(
+        process.env.SECURITY_CLEANUP_INTERVAL ||
+        60000
+      );
+
   }
 
-  // ═══════════════════════════════════════════
-  // 🧠 INITIALIZE
-  // ═══════════════════════════════════════════
 
-  initialize() {
+  /* ═══════════════════════════════════════
+     INITIALIZE
+  ═══════════════════════════════════════ */
 
-    if (
-      this.state.initialized
-    ) {
-      return;
-    }
+  async initialize() {
 
-    this.state.initialized =
-      true;
+    this.initialized = true;
+
+    return true;
   }
 
-  // ═══════════════════════════════════════════
-  // 🚀 START
-  // ═══════════════════════════════════════════
 
-  start() {
+  /* ═══════════════════════════════════════
+     START
+  ═══════════════════════════════════════ */
 
-    if (
-      !this.state.initialized
-    ) {
-      this.initialize();
+  async start() {
+
+    if (!this.initialized) {
+
+      await this.initialize();
     }
 
-    if (
-      this.state.started
-    ) {
-      return;
+
+    if (this.started) {
+
+      return true;
     }
 
-    this.state.started =
-      true;
 
-    return {
-      success: true,
-      status: 'online'
-    };
+    this.started = true;
+
+
+    this.cleanupTimer =
+      setInterval(
+        () => {
+
+          try {
+
+            this.cleanup();
+
+          } catch (error) {
+
+            console.warn(
+              '⚠️ Security cleanup error:',
+              error.message
+            );
+
+          }
+
+        },
+        this.cleanupInterval
+      );
+
+
+    /* Prevent timer from keeping Node alive */
+    if (
+      this.cleanupTimer &&
+      typeof this.cleanupTimer.unref === 'function'
+    ) {
+
+      this.cleanupTimer.unref();
+    }
+
+
+    return true;
   }
 
-  // ═══════════════════════════════════════════
-  // 🔐 IDENTIFIER
-  // ═══════════════════════════════════════════
 
-  normalizeIdentifier(
-    identifier
-  ) {
+  /* ═══════════════════════════════════════
+     REQUEST CHECK
+  ═══════════════════════════════════════ */
 
-    if (
-      identifier === null ||
-      identifier === undefined
-    ) {
-      return 'unknown';
-    }
+  check(identifier = 'unknown') {
 
-    return String(
-      identifier
-    ).trim() || 'unknown';
-  }
+    this.stats.totalChecks++;
 
-  // ═══════════════════════════════════════════
-  // 🛡️ REQUEST CHECK
-  // ═══════════════════════════════════════════
-
-  check(
-    identifier
-  ) {
-
-    this.stats.checked++;
 
     const key =
-      this.normalizeIdentifier(
-        identifier
-      );
+      String(identifier);
+
 
     const now =
       Date.now();
 
+
     let record =
-      this.requests.get(
-        key
-      );
+      this.requests.get(key);
+
 
     if (!record) {
 
       record = {
+
         count: 0,
-        firstRequest: now,
-        lastRequest: now,
-        blockedUntil: 0
+
+        windowStart:
+          now,
+
+        lastRequest:
+          0
+
       };
 
       this.requests.set(
@@ -149,79 +163,116 @@ class VentronSecurityManager {
       );
     }
 
-    // Previous block still active
+
+    /*
+     * Reset request window
+     */
+
     if (
-      record.blockedUntil > now
-    ) {
-
-      this.stats.blocked++;
-
-      return {
-        allowed: false,
-        blocked: true,
-        reason: 'RATE_LIMITED',
-        retryAfter:
-          record.blockedUntil - now
-      };
-    }
-
-    // Reset window
-    if (
-      now -
-      record.firstRequest >
+      now - record.windowStart >=
       this.cooldown
     ) {
 
       record.count = 0;
-      record.firstRequest = now;
+
+      record.windowStart =
+        now;
     }
 
-    record.count++;
-    record.lastRequest = now;
+
+    /*
+     * Cooldown protection
+     */
 
     if (
-      record.count >
-      this.maxRequests
+      record.lastRequest &&
+      now - record.lastRequest <
+      100
     ) {
-
-      record.blockedUntil =
-        now + this.cooldown;
 
       this.stats.blocked++;
 
       return {
+
         allowed: false,
-        blocked: true,
-        reason: 'RATE_LIMITED',
+
+        reason:
+          'TOO_FAST',
+
         retryAfter:
-          this.cooldown
+          100 -
+          (now - record.lastRequest)
+
       };
     }
 
+
+    /*
+     * Maximum request protection
+     */
+
+    if (
+      record.count >=
+      this.maxRequests
+    ) {
+
+      this.stats.blocked++;
+
+      return {
+
+        allowed: false,
+
+        reason:
+          'RATE_LIMITED',
+
+        retryAfter:
+          Math.max(
+            0,
+            this.cooldown -
+            (now - record.windowStart)
+          )
+
+      };
+    }
+
+
+    record.count++;
+
+    record.lastRequest =
+      now;
+
+
     this.stats.allowed++;
 
+
     return {
+
       allowed: true,
-      blocked: false,
+
       remaining:
         Math.max(
           0,
           this.maxRequests -
           record.count
         )
+
     };
   }
 
-  // ═══════════════════════════════════════════
-  // 🧹 CLEAN OLD RECORDS
-  // ═══════════════════════════════════════════
+
+  /* ═══════════════════════════════════════
+     CLEANUP
+  ═══════════════════════════════════════ */
 
   cleanup() {
 
     const now =
       Date.now();
 
-    let removed = 0;
+
+    let removed =
+      0;
+
 
     for (
       const [
@@ -231,8 +282,8 @@ class VentronSecurityManager {
     ) {
 
       if (
-        now -
-        record.lastRequest >
+        !record ||
+        now - record.windowStart >
         this.cooldown * 2
       ) {
 
@@ -244,95 +295,82 @@ class VentronSecurityManager {
       }
     }
 
+
     this.stats.cleaned +=
       removed;
+
 
     return removed;
   }
 
-  // ═══════════════════════════════════════════
-  // 🔑 SECRET CHECK
-  // ═══════════════════════════════════════════
 
-  hasAdminUID() {
+  /* ═══════════════════════════════════════
+     STOP
+  ═══════════════════════════════════════ */
 
-    return Boolean(
-      process.env.ADMIN_UID
-    );
+  async stop() {
+
+    if (
+      this.cleanupTimer
+    ) {
+
+      clearInterval(
+        this.cleanupTimer
+      );
+
+      this.cleanupTimer =
+        null;
+    }
+
+
+    this.requests.clear();
+
+    this.started = false;
+
+    return true;
   }
 
-  hasAPIKey() {
 
-    return Boolean(
-      process.env.API_KEY
-    );
-  }
-
-  hasMessengerToken() {
-
-    return Boolean(
-      process.env.MESSENGER_PAGE_ACCESS_TOKEN
-    );
-  }
-
-  // ═══════════════════════════════════════════
-  // 📊 STATUS
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     STATUS
+  ═══════════════════════════════════════ */
 
   getStatus() {
 
     return {
 
       initialized:
-        this.state.initialized,
+        this.initialized,
 
       started:
-        this.state.started,
+        this.started,
 
       activeIdentifiers:
         this.requests.size,
 
-      limits: {
+      maxRequests:
+        this.maxRequests,
 
-        maxRequests:
-          this.maxRequests,
+      cooldown:
+        this.cooldown,
 
-        cooldown:
-          this.cooldown
-      },
+      cleanupInterval:
+        this.cleanupInterval,
 
-      secrets: {
-
-        adminUID:
-          this.hasAdminUID(),
-
-        apiKey:
-          this.hasAPIKey(),
-
-        messengerToken:
-          this.hasMessengerToken()
-      },
+      cleanupRunning:
+        Boolean(
+          this.cleanupTimer
+        ),
 
       stats: {
         ...this.stats
       }
+
     };
   }
 
-  // ═══════════════════════════════════════════
-  // 🛑 STOP
-  // ═══════════════════════════════════════════
-
-  stop() {
-
-    this.requests.clear();
-
-    this.state.started =
-      false;
-
-    return true;
-  }
 }
+
 
 module.exports =
   VentronSecurityManager;
