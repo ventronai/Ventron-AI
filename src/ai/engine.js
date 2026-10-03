@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║                  VENTRON AI ENGINE             ║
- * ║            AI PROVIDER CONTROL SYSTEM           ║
+ * ║                VENTRON AI ENGINE               ║
+ * ║           PROVIDER CONTROL SYSTEM              ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -10,8 +10,10 @@
 
 'use strict';
 
-const EventEmitter =
-  require('events');
+const EventEmitter = require('events');
+
+const VentronLocalProvider =
+  require('./providers/local');
 
 
 class VentronAIEngine extends EventEmitter {
@@ -26,21 +28,18 @@ class VentronAIEngine extends EventEmitter {
       );
     }
 
-    this.config =
-      config;
+    this.config = config;
 
     this.state = {
-
-      initialized:
-        false,
-
-      started:
-        false,
-
-      stopped:
-        false
+      initialized: false,
+      started: false,
+      stopped: false
     };
 
+
+    /* ═══════════════════════════════════════
+       PROVIDERS
+    ═══════════════════════════════════════ */
 
     this.providers =
       new Map();
@@ -49,370 +48,437 @@ class VentronAIEngine extends EventEmitter {
       null;
 
 
+    /* ═══════════════════════════════════════
+       STATISTICS
+    ═══════════════════════════════════════ */
+
     this.stats = {
 
-      requests:
-        0,
+      requests: 0,
 
-      responses:
-        0,
+      responses: 0,
 
-      failures:
-        0
+      failures: 0,
+
+      providerRequests: {},
+
+      providerFailures: {}
+
     };
+
+
+    /* ═══════════════════════════════════════
+       BUILT-IN LOCAL PROVIDER
+    ═══════════════════════════════════════ */
+
+    this.localProvider =
+      new VentronLocalProvider(
+        config
+      );
+
+    this.registerProvider(
+      'local',
+      this.localProvider
+    );
+
+    this.setDefaultProvider(
+      'local'
+    );
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🚀 INITIALIZE
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     INITIALIZE
+  ═══════════════════════════════════════ */
 
-  initialize() {
+  async initialize() {
 
-    if (
-      this.state.initialized
-    ) {
-      return;
-    }
-
-    this.state.initialized =
-      true;
-
-    this.state.stopped =
-      false;
-
-
-    return {
-
-      success:
-        true,
-
-      status:
-        'initialized'
-    };
-  }
-
-
-  // ═══════════════════════════════════════════
-  // ⚡ START
-  // ═══════════════════════════════════════════
-
-  async start() {
-
-    if (
-      !this.state.initialized
-    ) {
-      this.initialize();
-    }
-
-    if (
-      this.state.started
-    ) {
+    if (this.state.initialized) {
       return;
     }
 
 
     for (
-      const [
-        name,
-        provider
-      ] of this.providers
+      const [name, provider]
+      of this.providers
     ) {
 
-      try {
+      if (
+        provider &&
+        typeof provider.initialize === 'function'
+      ) {
 
-        if (
-          typeof provider.start ===
-          'function'
-        ) {
-
-          await provider.start();
-        }
-
-      } catch (error) {
-
-        this.emit(
-          'providerError',
-          {
-            name,
-            error
-          }
-        );
+        await provider.initialize();
       }
+
     }
 
 
-    this.state.started =
-      true;
-
-    this.state.stopped =
-      false;
+    this.state.initialized = true;
+    this.state.stopped = false;
 
 
     return {
-
-      success:
-        true,
-
-      status:
-        'online'
+      success: true,
+      status: 'initialized',
+      provider:
+        this.defaultProvider
     };
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🔌 REGISTER PROVIDER
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     START
+  ═══════════════════════════════════════ */
+
+  async start() {
+
+    if (!this.state.initialized) {
+      await this.initialize();
+    }
+
+    if (this.state.started) {
+      return;
+    }
+
+
+    for (
+      const [name, provider]
+      of this.providers
+    ) {
+
+      if (
+        provider &&
+        typeof provider.start === 'function'
+      ) {
+
+        await provider.start();
+      }
+
+    }
+
+
+    this.state.started = true;
+    this.state.stopped = false;
+
+
+    this.emit(
+      'started'
+    );
+
+
+    return {
+      success: true,
+      status: 'online',
+      provider:
+        this.defaultProvider
+    };
+  }
+
+
+  /* ═══════════════════════════════════════
+     REGISTER PROVIDER
+  ═══════════════════════════════════════ */
 
   registerProvider(
     name,
     provider
   ) {
 
-    if (
-      !name ||
-      typeof name !== 'string'
-    ) {
+    const providerName =
+      String(name || '')
+        .trim()
+        .toLowerCase();
 
-      throw new TypeError(
-        'AI provider name must be a string.'
+
+    if (!providerName) {
+      throw new Error(
+        'AI provider name is required.'
       );
     }
 
 
-    if (
-      !provider ||
-      typeof provider.generate !==
-      'function'
-    ) {
-
-      throw new TypeError(
-        `AI provider "${name}" must implement generate().`
+    if (!provider) {
+      throw new Error(
+        `AI provider "${providerName}" is invalid.`
       );
     }
 
 
     this.providers.set(
-      name,
+      providerName,
       provider
     );
 
 
-    if (
-      !this.defaultProvider
-    ) {
-
-      this.defaultProvider =
-        name;
+    if (!this.stats.providerRequests[providerName]) {
+      this.stats.providerRequests[providerName] = 0;
     }
 
 
-    this.emit(
-      'providerRegistered',
-      {
-        name
-      }
-    );
+    if (!this.stats.providerFailures[providerName]) {
+      this.stats.providerFailures[providerName] = 0;
+    }
 
 
-    return true;
+    return provider;
   }
 
 
-  // ═══════════════════════════════════════════
-  // ⭐ DEFAULT PROVIDER
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     REMOVE PROVIDER
+  ═══════════════════════════════════════ */
 
-  setDefaultProvider(
-    name
-  ) {
+  removeProvider(name) {
+
+    const providerName =
+      String(name || '')
+        .trim()
+        .toLowerCase();
+
 
     if (
-      !this.providers.has(name)
+      providerName === this.defaultProvider
     ) {
 
       throw new Error(
-        `AI provider "${name}" is not registered.`
+        'Cannot remove the default AI provider.'
+      );
+    }
+
+
+    return this.providers.delete(
+      providerName
+    );
+  }
+
+
+  /* ═══════════════════════════════════════
+     GET PROVIDER
+  ═══════════════════════════════════════ */
+
+  getProvider(name) {
+
+    const providerName =
+      String(
+        name ||
+        this.defaultProvider ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+
+    return this.providers.get(
+      providerName
+    ) || null;
+  }
+
+
+  /* ═══════════════════════════════════════
+     SET DEFAULT PROVIDER
+  ═══════════════════════════════════════ */
+
+  setDefaultProvider(name) {
+
+    const providerName =
+      String(name || '')
+        .trim()
+        .toLowerCase();
+
+
+    if (!providerName) {
+      throw new Error(
+        'Default AI provider is required.'
+      );
+    }
+
+
+    if (
+      !this.providers.has(providerName)
+    ) {
+
+      throw new Error(
+        `AI provider "${providerName}" is not registered.`
       );
     }
 
 
     this.defaultProvider =
-      name;
+      providerName;
 
 
-    return true;
+    return providerName;
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🤖 GENERATE
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     GENERATE RESPONSE
+  ═══════════════════════════════════════ */
 
-  async generate(
-    input = {}
-  ) {
+  async generate(input = {}) {
 
     this.stats.requests++;
 
 
+    const message =
+      typeof input === 'string'
+        ? input
+        : (
+            input.message ||
+            input.text ||
+            ''
+          );
+
+
+    if (!String(message).trim()) {
+
+      this.stats.failures++;
+
+      return {
+        success: false,
+        error: 'AI_MESSAGE_EMPTY'
+      };
+    }
+
+
+    const providerName =
+      String(
+        input.provider ||
+        this.defaultProvider ||
+        'local'
+      )
+        .trim()
+        .toLowerCase();
+
+
+    const provider =
+      this.getProvider(
+        providerName
+      );
+
+
+    if (!provider) {
+
+      this.stats.failures++;
+
+      if (
+        !this.stats.providerFailures[providerName]
+      ) {
+
+        this.stats.providerFailures[providerName] = 0;
+      }
+
+      this.stats.providerFailures[
+        providerName
+      ]++;
+
+
+      return {
+        success: false,
+        error: 'AI_PROVIDER_NOT_FOUND',
+        provider: providerName
+      };
+    }
+
+
+    if (
+      !this.stats.providerRequests[providerName]
+    ) {
+
+      this.stats.providerRequests[
+        providerName
+      ] = 0;
+    }
+
+
+    this.stats.providerRequests[
+      providerName
+    ]++;
+
+
     try {
 
-      const providerName =
-        input.provider ||
-        this.defaultProvider;
+      let result;
 
+
+      /*
+       * Preferred provider method:
+       * generate()
+       */
 
       if (
-        !providerName
+        typeof provider.generate === 'function'
       ) {
 
-        this.stats.failures++;
+        result =
+          await provider.generate({
 
+            ...input,
 
-        return {
+            message,
 
-          success:
-            false,
+            context:
+              input.context || '',
 
-          reason:
-            'NO_AI_PROVIDER',
+            history:
+              input.history || [],
 
-          response:
-            'কোনো AI provider চালু নেই।'
-        };
+            userId:
+              input.userId || null,
+
+            threadId:
+              input.threadId || null,
+
+            metadata:
+              input.metadata || {}
+
+          });
+
       }
 
 
-      const provider =
-        this.providers.get(
-          providerName
+      /*
+       * Compatibility method:
+       * chat()
+       */
+
+      else if (
+        typeof provider.chat === 'function'
+      ) {
+
+        result =
+          await provider.chat({
+
+            ...input,
+
+            message,
+
+            context:
+              input.context || '',
+
+            history:
+              input.history || [],
+
+            userId:
+              input.userId || null,
+
+            threadId:
+              input.threadId || null,
+
+            metadata:
+              input.metadata || {}
+
+          });
+
+      }
+
+
+      else {
+
+        throw new Error(
+          `Provider "${providerName}" has no generate/chat method.`
         );
-
-
-      if (
-        !provider
-      ) {
-
-        this.stats.failures++;
-
-
-        return {
-
-          success:
-            false,
-
-          reason:
-            'PROVIDER_NOT_FOUND',
-
-          provider:
-            providerName
-        };
-      }
-
-
-      // ═════════════════════════════════════════
-      // 🧠 NORMALIZE MEMORY CONTEXT
-      // ═════════════════════════════════════════
-
-      const context =
-        Array.isArray(
-          input.context
-        )
-          ? input.context
-          : [];
-
-
-      const history =
-        Array.isArray(
-          input.history
-        )
-          ? input.history
-          : context;
-
-
-      // ═════════════════════════════════════════
-      // 🚀 SEND TO PROVIDER
-      // ═════════════════════════════════════════
-
-      const result =
-        await provider.generate({
-
-          message:
-            input.message || '',
-
-          user:
-            input.user || null,
-
-          thread:
-            input.thread || null,
-
-          userId:
-            input.userId || null,
-
-          threadId:
-            input.threadId || null,
-
-          context,
-
-          history,
-
-          metadata:
-            input.metadata || {}
-        });
-
-
-      let response;
-
-
-      if (
-        typeof result === 'string'
-      ) {
-
-        response =
-          result;
-
-      } else if (
-        result &&
-        typeof result.response ===
-        'string'
-      ) {
-
-        response =
-          result.response;
-
-      } else if (
-        result &&
-        typeof result.text ===
-        'string'
-      ) {
-
-        response =
-          result.text;
-
-      } else {
-
-        response =
-          '';
-      }
-
-
-      if (!response) {
-
-        this.stats.failures++;
-
-
-        return {
-
-          success:
-            false,
-
-          reason:
-            'EMPTY_AI_RESPONSE',
-
-          provider:
-            providerName
-        };
       }
 
 
@@ -422,11 +488,12 @@ class VentronAIEngine extends EventEmitter {
       this.emit(
         'response',
         {
-
           provider:
             providerName,
 
-          response
+          input,
+
+          result
         }
       );
 
@@ -434,17 +501,30 @@ class VentronAIEngine extends EventEmitter {
       return {
 
         success:
-          true,
-
-        response,
+          result?.success !== false,
 
         provider:
-          providerName
+          providerName,
+
+        response:
+          result?.response ??
+          result?.text ??
+          result?.message ??
+          String(result ?? ''),
+
+        raw:
+          result
       };
+
 
     } catch (error) {
 
       this.stats.failures++;
+
+
+      this.stats.providerFailures[
+        providerName
+      ]++;
 
 
       this.emit(
@@ -455,29 +535,26 @@ class VentronAIEngine extends EventEmitter {
 
       return {
 
-        success:
-          false,
-
-        reason:
-          'AI_GENERATION_ERROR',
+        success: false,
 
         error:
+          'AI_PROVIDER_ERROR',
+
+        message:
           error.message,
 
-        response:
-          ''
+        provider:
+          providerName
       };
     }
   }
 
 
-  // ═══════════════════════════════════════════
-  // 💬 CHAT COMPATIBILITY
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     CHAT ALIAS
+  ═══════════════════════════════════════ */
 
-  async chat(
-    input = {}
-  ) {
+  async chat(input = {}) {
 
     return this.generate(
       input
@@ -485,11 +562,49 @@ class VentronAIEngine extends EventEmitter {
   }
 
 
-  // ═══════════════════════════════════════════
-  // 📊 STATUS
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     STATUS
+  ═══════════════════════════════════════ */
 
   getStatus() {
+
+    const providerStatus = {};
+
+
+    for (
+      const [name, provider]
+      of this.providers
+    ) {
+
+      try {
+
+        if (
+          provider &&
+          typeof provider.getStatus === 'function'
+        ) {
+
+          providerStatus[name] =
+            provider.getStatus();
+
+        } else {
+
+          providerStatus[name] = {
+            name,
+            available: true
+          };
+        }
+
+      } catch (error) {
+
+        providerStatus[name] = {
+          name,
+          available: false,
+          error:
+            error.message
+        };
+      }
+    }
+
 
     return {
 
@@ -510,42 +625,44 @@ class VentronAIEngine extends EventEmitter {
           this.providers.keys()
         ),
 
-      providerCount:
-        this.providers.size,
+      providerStatus,
 
-      stats:
-        {
-          ...this.stats
+      stats: {
+        ...this.stats,
+
+        providerRequests: {
+          ...this.stats.providerRequests
+        },
+
+        providerFailures: {
+          ...this.stats.providerFailures
         }
+      }
     };
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🛑 STOP
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     STOP
+  ═══════════════════════════════════════ */
 
   async stop() {
 
-    if (
-      !this.state.started
-    ) {
+    if (!this.state.started) {
       return;
     }
 
 
     for (
-      const [
-        name,
-        provider
-      ] of this.providers
+      const [name, provider]
+      of this.providers
     ) {
 
       try {
 
         if (
-          typeof provider.stop ===
-          'function'
+          provider &&
+          typeof provider.stop === 'function'
         ) {
 
           await provider.stop();
@@ -553,22 +670,27 @@ class VentronAIEngine extends EventEmitter {
 
       } catch (error) {
 
-        this.emit(
-          'providerError',
-          {
-            name,
-            error
-          }
-        );
+        this.stats.providerFailures[
+          name
+        ]++;
+
       }
     }
 
 
-    this.state.started =
-      false;
+    this.state.started = false;
+    this.state.stopped = true;
 
-    this.state.stopped =
-      true;
+
+    this.emit(
+      'stopped'
+    );
+
+
+    return {
+      success: true,
+      status: 'stopped'
+    };
   }
 }
 
