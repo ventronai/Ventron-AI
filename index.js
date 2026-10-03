@@ -11,13 +11,14 @@
 'use strict';
 
 const os = require('os');
+const http = require('http');
 
 const config = require('./config');
 const VentronCore = require('./src/core/manager');
 const VentronDiagnostics = require('./src/core/diagnostics');
 
 // ═══════════════════════════════════════════════════
-// 🤖 VENTRON IDENTITY
+// 🤖 IDENTITY
 // ═══════════════════════════════════════════════════
 
 const VENTRON = {
@@ -28,59 +29,36 @@ const VENTRON = {
 };
 
 // ═══════════════════════════════════════════════════
-// 🖥️ SYSTEM INFORMATION
+// 🖥️ SYSTEM INFO
 // ═══════════════════════════════════════════════════
 
 function getSystemInfo() {
 
-  const totalMemory =
-    os.totalmem();
-
-  const freeMemory =
-    os.freemem();
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
 
   return {
-
-    platform:
-      process.platform,
-
-    architecture:
-      process.arch,
-
-    node:
-      process.version,
-
-    cpuCores:
-      os.cpus().length,
-
-    totalMemoryMB:
-      Math.round(
-        totalMemory /
-        1024 /
-        1024
-      ),
-
-    freeMemoryMB:
-      Math.round(
-        freeMemory /
-        1024 /
-        1024
-      ),
-
-    uptimeSeconds:
-      Math.floor(
-        process.uptime()
-      )
+    platform: process.platform,
+    architecture: process.arch,
+    node: process.version,
+    cpuCores: os.cpus().length,
+    totalMemoryMB: Math.round(
+      totalMemory / 1024 / 1024
+    ),
+    freeMemoryMB: Math.round(
+      freeMemory / 1024 / 1024
+    ),
+    uptimeSeconds: Math.floor(
+      process.uptime()
+    )
   };
 }
 
 // ═══════════════════════════════════════════════════
-// 🎨 FUTURISTIC BANNER
+// 🎨 BANNER
 // ═══════════════════════════════════════════════════
 
 function printBanner() {
-
-  console.clear();
 
   console.log(`
 ╔══════════════════════════════════════════════════════╗
@@ -97,7 +75,146 @@ function printBanner() {
 }
 
 // ═══════════════════════════════════════════════════
-// 📊 PRINT DIAGNOSTIC REPORT
+// 🌐 HEALTH SERVER
+// ═══════════════════════════════════════════════════
+
+function startHealthServer(core) {
+
+  const server = http.createServer(
+    (req, res) => {
+
+      res.setHeader(
+        'Content-Type',
+        'application/json; charset=utf-8'
+      );
+
+      // ─────────────────────────────────────────
+      // ❤️ HEALTH
+      // ─────────────────────────────────────────
+
+      if (
+        req.url === '/' ||
+        req.url === '/health'
+      ) {
+
+        const status =
+          core.getStatus();
+
+        res.writeHead(
+          status.started ? 200 : 503
+        );
+
+        res.end(
+          JSON.stringify(
+            {
+              success: true,
+
+              status:
+                status.started
+                  ? 'online'
+                  : 'starting',
+
+              bot: VENTRON.name,
+              version: VENTRON.version,
+
+              core: {
+                initialized:
+                  status.initialized,
+
+                started:
+                  status.started
+              },
+
+              commands:
+                status.commandEngine.commands,
+
+              uptime:
+                status.uptime,
+
+              timestamp:
+                new Date().toISOString()
+            },
+            null,
+            2
+          )
+        );
+
+        return;
+      }
+
+      // ─────────────────────────────────────────
+      // 🔌 API INFO
+      // ─────────────────────────────────────────
+
+      if (req.url === '/api') {
+
+        res.writeHead(200);
+
+        res.end(
+          JSON.stringify(
+            {
+              success: true,
+              service: 'Ventron AI API Gateway',
+              bot: VENTRON.name,
+              version: VENTRON.version,
+              status: 'ready'
+            },
+            null,
+            2
+          )
+        );
+
+        return;
+      }
+
+      // ─────────────────────────────────────────
+      // ❌ NOT FOUND
+      // ─────────────────────────────────────────
+
+      res.writeHead(404);
+
+      res.end(
+        JSON.stringify(
+          {
+            success: false,
+            error: 'Route not found',
+            path: req.url
+          },
+          null,
+          2
+        )
+      );
+    }
+  );
+
+  server.listen(
+    config.server.port,
+    config.server.host,
+    () => {
+
+      console.log(
+        '\n🌐 Ventron HTTP Health Server ONLINE'
+      );
+
+      console.log(
+        `🔌 Port: ${config.server.port}`
+      );
+
+      console.log(
+        '❤️ Health endpoint: /health'
+      );
+
+      console.log(
+        '🔌 API endpoint: /api\n'
+      );
+    }
+  );
+
+  return server;
+}
+
+// ═══════════════════════════════════════════════════
+// 📊 DIAGNOSTICS
 // ═══════════════════════════════════════════════════
 
 function printDiagnostics(report) {
@@ -166,7 +283,9 @@ function printDiagnostics(report) {
     '└──────────────────────────────────────────────┘'
   );
 
-  if (report.commands.commands.length) {
+  if (
+    report.commands.commands.length
+  ) {
 
     console.log(
       '\n🧩 Loaded Commands:'
@@ -199,9 +318,9 @@ async function startVentron() {
   const core =
     new VentronCore(config);
 
-  // ═══════════════════════════════════════════════
-  // 🧠 CORE EVENTS
-  // ═══════════════════════════════════════════════
+  // ─────────────────────────────────────────────
+  // CORE EVENTS
+  // ─────────────────────────────────────────────
 
   core.on(
     'initialized',
@@ -211,21 +330,10 @@ async function startVentron() {
         `🧠 Core initialized: ${data.bot} v${data.version}`
       );
 
-      if (data.commands) {
-
-        console.log(
-          `🧩 Commands discovered: ${data.commands.length}`
-        );
-      }
-    }
-  );
-
-  core.on(
-    'moduleRegistered',
-    ({ name }) => {
-
       console.log(
-        `🧩 Module registered: ${name}`
+        `🧩 Commands discovered: ${
+          data.commands.length
+        }`
       );
     }
   );
@@ -235,7 +343,9 @@ async function startVentron() {
     (data) => {
 
       console.log(
-        `⚡ Command Engine online: ${data.commands.length} commands`
+        `⚡ Command Engine online: ${
+          data.commands.length
+        } commands`
       );
     }
   );
@@ -251,17 +361,6 @@ async function startVentron() {
   );
 
   core.on(
-    'moduleError',
-    ({ name, error }) => {
-
-      console.error(
-        `❌ Module error [${name}]:`,
-        error.message
-      );
-    }
-  );
-
-  core.on(
     'stopped',
     () => {
 
@@ -271,9 +370,9 @@ async function startVentron() {
     }
   );
 
-  // ═══════════════════════════════════════════════
-  // 🧠 INITIALIZE CORE
-  // ═══════════════════════════════════════════════
+  // ─────────────────────────────────────────────
+  // INITIALIZE
+  // ─────────────────────────────────────────────
 
   core.initialize();
 
@@ -325,86 +424,32 @@ async function startVentron() {
   );
 
   console.log(
-    '\n┌──────────────────────────────────────────────┐'
+    '\n🖥️ Node.js   : ' + system.node
   );
 
   console.log(
-    '│                 SYSTEM INFO                  │'
+    '💻 Platform  : ' + system.platform
   );
 
   console.log(
-    '├──────────────────────────────────────────────┤'
+    '🧠 CPU Cores : ' + system.cpuCores
   );
 
   console.log(
-    `│ Platform          : ${system.platform}`
+    '💾 Memory    : ' +
+    system.freeMemoryMB +
+    ' MB free'
   );
 
-  console.log(
-    `│ Architecture      : ${system.architecture}`
-  );
-
-  console.log(
-    `│ Node.js           : ${system.node}`
-  );
-
-  console.log(
-    `│ CPU Cores         : ${system.cpuCores}`
-  );
-
-  console.log(
-    `│ Total Memory      : ${system.totalMemoryMB} MB`
-  );
-
-  console.log(
-    `│ Free Memory       : ${system.freeMemoryMB} MB`
-  );
-
-  console.log(
-    '└──────────────────────────────────────────────┘'
-  );
-
-  console.log(
-    '\n────────────────────────────────────────────────'
-  );
-
-  console.log(
-    `🤖 Bot       : ${VENTRON.name}`
-  );
-
-  console.log(
-    `✨ Nickname  : ${VENTRON.nickname}`
-  );
-
-  console.log(
-    `📦 Version   : ${VENTRON.version}`
-  );
-
-  console.log(
-    `👑 Author    : ${VENTRON.author}`
-  );
-
-  console.log(
-    `⌨️ Prefix    : ${config.commands.prefix}`
-  );
-
-  console.log(
-    `🔐 Admin     : ${config.admin.name}`
-  );
-
-  console.log(
-    '\n────────────────────────────────────────────────'
-  );
-
-  // ═══════════════════════════════════════════════
-  // 🚀 START CORE
-  // ═══════════════════════════════════════════════
+  // ─────────────────────────────────────────────
+  // START CORE
+  // ─────────────────────────────────────────────
 
   await core.start();
 
-  // ═══════════════════════════════════════════════
-  // 🩺 DIAGNOSTICS
-  // ═══════════════════════════════════════════════
+  // ─────────────────────────────────────────────
+  // DIAGNOSTICS
+  // ─────────────────────────────────────────────
 
   const diagnostics =
     new VentronDiagnostics(core);
@@ -414,10 +459,136 @@ async function startVentron() {
 
   printDiagnostics(report);
 
+  // ─────────────────────────────────────────────
+  // START HTTP SERVER
+  // ─────────────────────────────────────────────
+
+  const server =
+    startHealthServer(core);
+
   console.log(
     '\n────────────────────────────────────────────────'
   );
 
   console.log(
     '✅ Ventron AI is ready.'
- 
+  );
+
+  console.log(
+    '🧠 Core architecture is online.'
+  );
+
+  console.log(
+    '🌐 Health server is online.'
+  );
+
+  console.log(
+    '⚡ Waiting for runtime events...\n'
+  );
+
+  return {
+    core,
+    server
+  };
+}
+
+// ═══════════════════════════════════════════════════
+// 🛡️ ERROR HANDLING
+// ═══════════════════════════════════════════════════
+
+process.on(
+  'uncaughtException',
+  (error) => {
+
+    console.error(
+      '\n❌ Uncaught Exception'
+    );
+
+    console.error(error);
+  }
+);
+
+process.on(
+  'unhandledRejection',
+  (reason) => {
+
+    console.error(
+      '\n❌ Unhandled Promise Rejection'
+    );
+
+    console.error(reason);
+  }
+);
+
+// ═══════════════════════════════════════════════════
+// 🛑 SAFE SHUTDOWN
+// ═══════════════════════════════════════════════════
+
+let runtime = null;
+
+async function shutdown(signal) {
+
+  console.log(
+    `\n🛑 ${signal} received.`
+  );
+
+  if (runtime) {
+
+    if (runtime.core) {
+      await runtime.core.stop();
+    }
+
+    if (runtime.server) {
+
+      await new Promise(
+        (resolve) => {
+
+          runtime.server.close(
+            resolve
+          );
+        }
+      );
+    }
+  }
+
+  console.log(
+    '✅ Ventron AI stopped safely.'
+  );
+
+  process.exit(0);
+}
+
+process.on(
+  'SIGINT',
+  () => shutdown('SIGINT')
+);
+
+process.on(
+  'SIGTERM',
+  () => shutdown('SIGTERM')
+);
+
+// ═══════════════════════════════════════════════════
+// ▶️ BOOT
+// ═══════════════════════════════════════════════════
+
+startVentron()
+  .then(
+    (result) => {
+
+      runtime = result;
+
+    }
+  )
+  .catch(
+    (error) => {
+
+      console.error(
+        '\n❌ Ventron AI failed to start.'
+      );
+
+      console.error(error);
+
+      process.exit(1);
+    }
+  );
