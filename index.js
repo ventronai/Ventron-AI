@@ -11,7 +11,9 @@
 'use strict';
 
 const os = require('os');
+
 const config = require('./config');
+const VentronCore = require('./src/core/manager');
 
 // ═══════════════════════════════════════════════════
 // 🤖 VENTRON IDENTITY
@@ -65,15 +67,39 @@ function printBanner() {
 }
 
 // ═══════════════════════════════════════════════════
-// 🚀 CORE INITIALIZATION
+// 🚀 CORE STARTUP
 // ═══════════════════════════════════════════════════
 
-function initializeCore() {
+async function startVentron() {
   printBanner();
 
   console.log('⚡ Initializing Ventron AI Core...\n');
 
-  console.log('┌──────────────────────────────────────────────┐');
+  const core = new VentronCore(config);
+
+  // Core Events
+  core.on('initialized', (data) => {
+    console.log(`🧠 Core initialized: ${data.bot} v${data.version}`);
+  });
+
+  core.on('moduleRegistered', ({ name }) => {
+    console.log(`🧩 Module registered: ${name}`);
+  });
+
+  core.on('started', () => {
+    console.log('🚀 Ventron Core started.');
+  });
+
+  core.on('stopped', () => {
+    console.log('🛑 Ventron Core stopped.');
+  });
+
+  // Initialize
+  core.initialize();
+
+  const system = getSystemInfo();
+
+  console.log('\n┌──────────────────────────────────────────────┐');
   console.log('│              VENTRON CORE STATUS             │');
   console.log('├──────────────────────────────────────────────┤');
   console.log('│ 🧠 AI Engine       : STANDBY                 │');
@@ -84,8 +110,6 @@ function initializeCore() {
   console.log('│ 💾 Database        : STANDBY                 │');
   console.log('└──────────────────────────────────────────────┘');
 
-  const system = getSystemInfo();
-
   console.log('\n┌──────────────────────────────────────────────┐');
   console.log('│                 SYSTEM INFO                  │');
   console.log('├──────────────────────────────────────────────┤');
@@ -95,7 +119,6 @@ function initializeCore() {
   console.log(`│ CPU Cores         : ${system.cpuCores}`);
   console.log(`│ Total Memory      : ${system.totalMemoryMB} MB`);
   console.log(`│ Free Memory       : ${system.freeMemoryMB} MB`);
-  console.log(`│ Process Uptime    : ${system.uptimeSeconds}s`);
   console.log('└──────────────────────────────────────────────┘');
 
   console.log('\n────────────────────────────────────────────────');
@@ -109,12 +132,17 @@ function initializeCore() {
 
   console.log('\n────────────────────────────────────────────────');
 
-  console.log('✅ Ventron AI Core initialized successfully.');
-  console.log('🚀 Framework is ready for the next development stage.\n');
+  await core.start();
+
+  console.log('\n✅ Ventron AI is ready.');
+  console.log('🌐 Core architecture is online.');
+  console.log('🚀 Waiting for modules...\n');
+
+  return core;
 }
 
 // ═══════════════════════════════════════════════════
-// 🛡️ GLOBAL ERROR HANDLING
+// 🛡️ ERROR HANDLING
 // ═══════════════════════════════════════════════════
 
 process.on('uncaughtException', (error) => {
@@ -131,19 +159,40 @@ process.on('unhandledRejection', (reason) => {
 // 🛑 SAFE SHUTDOWN
 // ═══════════════════════════════════════════════════
 
-process.on('SIGINT', () => {
-  console.log('\n\n🛑 Ventron AI is shutting down safely...');
-  console.log('👋 Goodbye.');
+let ventronCore = null;
+
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutdown signal received.');
+
+  if (ventronCore) {
+    await ventronCore.stop();
+  }
+
+  console.log('✅ Ventron AI stopped safely.');
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
-  console.log('\n🛑 Ventron AI received shutdown signal.');
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Termination signal received.');
+
+  if (ventronCore) {
+    await ventronCore.stop();
+  }
+
+  console.log('✅ Ventron AI stopped safely.');
   process.exit(0);
 });
 
 // ═══════════════════════════════════════════════════
-// ▶️ START
+// ▶️ BOOT
 // ═══════════════════════════════════════════════════
 
-initializeCore();
+startVentron()
+  .then((core) => {
+    ventronCore = core;
+  })
+  .catch((error) => {
+    console.error('\n❌ Ventron AI failed to start.');
+    console.error(error);
+    process.exit(1);
+  });
