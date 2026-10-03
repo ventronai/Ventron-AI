@@ -49,6 +49,9 @@ const VentronWebhookServer =
 const VentronWebhookTester =
   require('../webhook/test');
 
+const VentronStorageManager =
+  require('../storage/manager');
+
 
 class VentronCore extends EventEmitter {
 
@@ -99,6 +102,16 @@ class VentronCore extends EventEmitter {
 
     this.security =
       new VentronSecurityManager(
+        config
+      );
+
+
+    // ═══════════════════════════════════════════
+    // 💾 STORAGE
+    // ═══════════════════════════════════════════
+
+    this.storage =
+      new VentronStorageManager(
         config
       );
 
@@ -755,11 +768,15 @@ class VentronCore extends EventEmitter {
       return;
     }
 
+
     this.logger.start();
+
+    this.storage.initialize();
 
     this.security.initialize();
 
     this.webhook.start();
+
 
     this.logger.info(
       'Initializing Ventron Core...'
@@ -787,11 +804,15 @@ class VentronCore extends EventEmitter {
     this.logger.info(
       'Ventron Core initialized.',
       {
+
         commands:
           commandStatus.loaded.length,
 
         platforms:
           this.platformManager.list(),
+
+        storage:
+          this.storage.getStatus(),
 
         webhook:
           this.webhook.getStatus(),
@@ -837,6 +858,7 @@ class VentronCore extends EventEmitter {
       this.initialize();
     }
 
+
     if (
       this.state.started
     ) {
@@ -861,8 +883,10 @@ class VentronCore extends EventEmitter {
 
     this.security.start();
 
+    await this.storage.start();
 
     await this.commandEngine.start();
+
 
     this.emit(
       'commandEngineStarted',
@@ -905,9 +929,11 @@ class VentronCore extends EventEmitter {
           );
         }
 
+
         this.logger.info(
           `Module started: ${name}`
         );
+
 
         this.emit(
           'moduleStarted',
@@ -923,6 +949,7 @@ class VentronCore extends EventEmitter {
               error.message
           }
         );
+
 
         this.emit(
           'moduleError',
@@ -969,6 +996,7 @@ class VentronCore extends EventEmitter {
       };
     }
 
+
     return this.selfTest.runAll();
   }
 
@@ -991,6 +1019,7 @@ class VentronCore extends EventEmitter {
           'CORE_OFFLINE'
       };
     }
+
 
     return this.webhookTester.runAll();
   }
@@ -1116,6 +1145,7 @@ class VentronCore extends EventEmitter {
           );
         }
 
+
         this.emit(
           'moduleStopped',
           name
@@ -1130,6 +1160,7 @@ class VentronCore extends EventEmitter {
               error.message
           }
         );
+
 
         this.emit(
           'moduleError',
@@ -1155,6 +1186,8 @@ class VentronCore extends EventEmitter {
     await this.commandEngine.stop();
 
     await this.webhook.stop();
+
+    await this.storage.stop();
 
     this.security.stop();
 
@@ -1215,6 +1248,9 @@ class VentronCore extends EventEmitter {
 
       security:
         this.security.getStatus(),
+
+      storage:
+        this.storage.getStatus(),
 
       webhook:
         this.webhook.getStatus(),
