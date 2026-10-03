@@ -23,18 +23,22 @@ class VentronDiagnostics {
     }
 
     this.core = core;
-    this.createdAt = Date.now();
+
+    this.createdAt =
+      Date.now();
   }
 
   // ═══════════════════════════════════════════════
-  // 🧠 CORE CHECK
+  // 🧠 CORE
   // ═══════════════════════════════════════════════
 
   checkCore() {
 
-    const status = this.core.getStatus();
+    const status =
+      this.core.getStatus();
 
     return {
+
       status:
         status.started
           ? 'ONLINE'
@@ -52,18 +56,17 @@ class VentronDiagnostics {
   }
 
   // ═══════════════════════════════════════════════
-  // ⚡ COMMAND CHECK
+  // ⌨️ COMMAND ENGINE
   // ═══════════════════════════════════════════════
 
   checkCommands() {
 
-    const engine =
-      this.core.commandEngine;
-
     const status =
-      engine.getStatus();
+      this.core.commandEngine
+        .getStatus();
 
     return {
+
       status:
         status.started
           ? 'ONLINE'
@@ -84,7 +87,126 @@ class VentronDiagnostics {
   }
 
   // ═══════════════════════════════════════════════
-  // 🖥️ SYSTEM CHECK
+  // 📡 EVENT GATEWAY
+  // ═══════════════════════════════════════════════
+
+  checkEventGateway() {
+
+    const status =
+      this.core.eventGateway
+        .getStatus();
+
+    return {
+
+      status:
+        status.started
+          ? 'ONLINE'
+          : 'STANDBY',
+
+      initialized:
+        status.initialized,
+
+      received:
+        status.stats.received,
+
+      messages:
+        status.stats.messages,
+
+      commands:
+        status.stats.commands,
+
+      errors:
+        status.stats.errors
+    };
+  }
+
+  // ═══════════════════════════════════════════════
+  // 🔀 MESSAGE ROUTER
+  // ═══════════════════════════════════════════════
+
+  checkMessageRouter() {
+
+    const status =
+      this.core.messageRouter
+        .getStatus();
+
+    return {
+
+      status:
+        status.started
+          ? 'ONLINE'
+          : 'STANDBY',
+
+      initialized:
+        status.initialized,
+
+      routed:
+        status.stats.routed,
+
+      messages:
+        status.stats.messages,
+
+      commands:
+        status.stats.commands,
+
+      events:
+        status.stats.events,
+
+      ignored:
+        status.stats.ignored,
+
+      errors:
+        status.stats.errors
+    };
+  }
+
+  // ═══════════════════════════════════════════════
+  // 🧠 AI SERVICE
+  // ═══════════════════════════════════════════════
+
+  checkAI() {
+
+    const status =
+      this.core.aiService
+        .getStatus();
+
+    return {
+
+      status:
+        status.started
+          ? 'ONLINE'
+          : 'STANDBY',
+
+      initialized:
+        status.initialized,
+
+      provider:
+        status.engine
+          .defaultProvider ||
+        'none',
+
+      providers:
+        status.engine.providers,
+
+      requests:
+        status.engine.stats.requests,
+
+      responses:
+        status.engine.stats.responses,
+
+      failures:
+        status.engine.stats.failures,
+
+      memorySessions:
+        status.memory.sessions,
+
+      memoryMessagesLimit:
+        status.memory.maxMessages
+    };
+  }
+
+  // ═══════════════════════════════════════════════
+  // 🖥️ SYSTEM
   // ═══════════════════════════════════════════════
 
   checkSystem() {
@@ -96,9 +218,11 @@ class VentronDiagnostics {
       os.freemem();
 
     const memoryUsed =
-      memoryTotal - memoryFree;
+      memoryTotal -
+      memoryFree;
 
     return {
+
       platform:
         process.platform,
 
@@ -112,6 +236,7 @@ class VentronDiagnostics {
         os.cpus().length,
 
       memory: {
+
         totalMB:
           Math.round(
             memoryTotal /
@@ -142,7 +267,7 @@ class VentronDiagnostics {
   }
 
   // ═══════════════════════════════════════════════
-  // 🛡️ SECURITY CHECK
+  // 🛡️ SECURITY
   // ═══════════════════════════════════════════════
 
   checkSecurity() {
@@ -151,7 +276,9 @@ class VentronDiagnostics {
       this.core.config.security;
 
     return {
-      status: 'ACTIVE',
+
+      status:
+        'ACTIVE',
 
       maxRequests:
         security.maxRequests,
@@ -159,7 +286,7 @@ class VentronDiagnostics {
       cooldown:
         security.cooldown,
 
-      secretsFromEnvironment:
+      environmentSecrets:
         Boolean(
           process.env.ADMIN_UID ||
           process.env.API_KEY
@@ -168,7 +295,7 @@ class VentronDiagnostics {
   }
 
   // ═══════════════════════════════════════════════
-  // 📊 FULL REPORT
+  // ❤️ OVERALL REPORT
   // ═══════════════════════════════════════════════
 
   getReport() {
@@ -179,6 +306,15 @@ class VentronDiagnostics {
     const commands =
       this.checkCommands();
 
+    const eventGateway =
+      this.checkEventGateway();
+
+    const messageRouter =
+      this.checkMessageRouter();
+
+    const ai =
+      this.checkAI();
+
     const system =
       this.checkSystem();
 
@@ -187,31 +323,16 @@ class VentronDiagnostics {
 
     const healthy =
       core.started &&
-      commands.failed === 0;
+      commands.failed === 0 &&
+      eventGateway.errors === 0 &&
+      messageRouter.errors === 0 &&
+      ai.failures === 0;
 
     return {
-      success: true,
+
+      success:
+        true,
 
       status:
         healthy
-          ? 'HEALTHY'
-          : 'ATTENTION_REQUIRED',
-
-      bot:
-        this.core.config.bot.name,
-
-      version:
-        this.core.config.bot.version,
-
-      timestamp:
-        new Date().toISOString(),
-
-      core,
-      commands,
-      system,
-      security
-    };
-  }
-}
-
-module.exports = VentronDiagnostics;
+          ? '
