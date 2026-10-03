@@ -14,8 +14,12 @@ const os = require('os');
 const http = require('http');
 
 const config = require('./config');
-const VentronCore = require('./src/core/manager');
-const VentronDiagnostics = require('./src/core/diagnostics');
+
+const VentronCore =
+  require('./src/core/manager');
+
+const VentronDiagnostics =
+  require('./src/core/diagnostics');
 
 // ═══════════════════════════════════════════════════
 // 🤖 IDENTITY
@@ -34,23 +38,44 @@ const VENTRON = {
 
 function getSystemInfo() {
 
-  const totalMemory = os.totalmem();
-  const freeMemory = os.freemem();
+  const totalMemory =
+    os.totalmem();
+
+  const freeMemory =
+    os.freemem();
 
   return {
-    platform: process.platform,
-    architecture: process.arch,
-    node: process.version,
-    cpuCores: os.cpus().length,
-    totalMemoryMB: Math.round(
-      totalMemory / 1024 / 1024
-    ),
-    freeMemoryMB: Math.round(
-      freeMemory / 1024 / 1024
-    ),
-    uptimeSeconds: Math.floor(
-      process.uptime()
-    )
+
+    platform:
+      process.platform,
+
+    architecture:
+      process.arch,
+
+    node:
+      process.version,
+
+    cpuCores:
+      os.cpus().length,
+
+    totalMemoryMB:
+      Math.round(
+        totalMemory /
+        1024 /
+        1024
+      ),
+
+    freeMemoryMB:
+      Math.round(
+        freeMemory /
+        1024 /
+        1024
+      ),
+
+    uptimeSeconds:
+      Math.floor(
+        process.uptime()
+      )
   };
 }
 
@@ -80,112 +105,175 @@ function printBanner() {
 
 function startHealthServer(core) {
 
-  const server = http.createServer(
-    (req, res) => {
+  const server =
+    http.createServer(
+      (req, res) => {
 
-      res.setHeader(
-        'Content-Type',
-        'application/json; charset=utf-8'
-      );
-
-      // ─────────────────────────────────────────
-      // ❤️ HEALTH
-      // ─────────────────────────────────────────
-
-      if (
-        req.url === '/' ||
-        req.url === '/health'
-      ) {
-
-        const status =
-          core.getStatus();
-
-        res.writeHead(
-          status.started ? 200 : 503
+        res.setHeader(
+          'Content-Type',
+          'application/json; charset=utf-8'
         );
 
-        res.end(
-          JSON.stringify(
-            {
-              success: true,
+        // ═══════════════════════════════════════
+        // ❤️ HEALTH
+        // ═══════════════════════════════════════
 
-              status:
-                status.started
-                  ? 'online'
-                  : 'starting',
+        if (
+          req.url === '/' ||
+          req.url === '/health'
+        ) {
 
-              bot: VENTRON.name,
-              version: VENTRON.version,
+          const status =
+            core.getStatus();
 
-              core: {
-                initialized:
-                  status.initialized,
+          res.writeHead(
+            status.started
+              ? 200
+              : 503
+          );
 
-                started:
+          res.end(
+            JSON.stringify(
+              {
+                success: true,
+
+                status:
                   status.started
+                    ? 'online'
+                    : 'starting',
+
+                bot:
+                  VENTRON.name,
+
+                version:
+                  VENTRON.version,
+
+                core: {
+                  initialized:
+                    status.initialized,
+
+                  started:
+                    status.started
+                },
+
+                systems: {
+
+                  commandEngine:
+                    status.commandEngine.started,
+
+                  eventGateway:
+                    status.eventGateway.started,
+
+                  messageRouter:
+                    status.messageRouter.started,
+
+                  aiEngine:
+                    status.ai.started,
+
+                  memory:
+                    status.ai.memory.sessions
+                },
+
+                commands:
+                  status
+                    .commandEngine
+                    .commands,
+
+                uptime:
+                  status.uptime,
+
+                timestamp:
+                  new Date().toISOString()
               },
+              null,
+              2
+            )
+          );
 
-              commands:
-                status.commandEngine.commands,
+          return;
+        }
 
-              uptime:
-                status.uptime,
+        // ═══════════════════════════════════════
+        // 🔌 API INFO
+        // ═══════════════════════════════════════
 
-              timestamp:
-                new Date().toISOString()
-            },
-            null,
-            2
-          )
-        );
+        if (req.url === '/api') {
 
-        return;
-      }
+          res.writeHead(200);
 
-      // ─────────────────────────────────────────
-      // 🔌 API INFO
-      // ─────────────────────────────────────────
+          res.end(
+            JSON.stringify(
+              {
+                success: true,
 
-      if (req.url === '/api') {
+                service:
+                  'Ventron AI API Gateway',
 
-        res.writeHead(200);
+                bot:
+                  VENTRON.name,
+
+                version:
+                  VENTRON.version,
+
+                status:
+                  'ready',
+
+                endpoints: [
+                  '/',
+                  '/health',
+                  '/api'
+                ]
+              },
+              null,
+              2
+            )
+          );
+
+          return;
+        }
+
+        // ═══════════════════════════════════════
+        // 📊 SYSTEM STATUS
+        // ═══════════════════════════════════════
+
+        if (req.url === '/status') {
+
+          res.writeHead(200);
+
+          res.end(
+            JSON.stringify(
+              core.getStatus(),
+              null,
+              2
+            )
+          );
+
+          return;
+        }
+
+        // ═══════════════════════════════════════
+        // ❌ NOT FOUND
+        // ═══════════════════════════════════════
+
+        res.writeHead(404);
 
         res.end(
           JSON.stringify(
             {
-              success: true,
-              service: 'Ventron AI API Gateway',
-              bot: VENTRON.name,
-              version: VENTRON.version,
-              status: 'ready'
+              success: false,
+
+              error:
+                'Route not found',
+
+              path:
+                req.url
             },
             null,
             2
           )
         );
-
-        return;
       }
-
-      // ─────────────────────────────────────────
-      // ❌ NOT FOUND
-      // ─────────────────────────────────────────
-
-      res.writeHead(404);
-
-      res.end(
-        JSON.stringify(
-          {
-            success: false,
-            error: 'Route not found',
-            path: req.url
-          },
-          null,
-          2
-        )
-      );
-    }
-  );
+    );
 
   server.listen(
     config.server.port,
@@ -202,6 +290,10 @@ function startHealthServer(core) {
 
       console.log(
         '❤️ Health endpoint: /health'
+      );
+
+      console.log(
+        '📊 Status endpoint: /status'
       );
 
       console.log(
@@ -224,7 +316,7 @@ function printDiagnostics(report) {
   );
 
   console.log(
-    '│          VENTRON DIAGNOSTIC REPORT           │'
+    '│          VENTRON DIAGNOSTIC REPORT          │'
   );
 
   console.log(
@@ -258,6 +350,36 @@ function printDiagnostics(report) {
   console.log(
     `│ Command Failures  : ${
       report.commands.failed
+    }`
+  );
+
+  console.log(
+    `│ Event Gateway     : ${
+      report.eventGateway.status
+    }`
+  );
+
+  console.log(
+    `│ Message Router    : ${
+      report.messageRouter.status
+    }`
+  );
+
+  console.log(
+    `│ AI Service        : ${
+      report.ai.status
+    }`
+  );
+
+  console.log(
+    `│ AI Provider       : ${
+      report.ai.provider
+    }`
+  );
+
+  console.log(
+    `│ Memory Sessions   : ${
+      report.ai.memorySessions
     }`
   );
 
@@ -318,16 +440,18 @@ async function startVentron() {
   const core =
     new VentronCore(config);
 
-  // ─────────────────────────────────────────────
-  // CORE EVENTS
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════
+  // 🔔 CORE EVENTS
+  // ═══════════════════════════════════════════
 
   core.on(
     'initialized',
     (data) => {
 
       console.log(
-        `🧠 Core initialized: ${data.bot} v${data.version}`
+        `🧠 Core initialized: ${
+          data.bot
+        } v${data.version}`
       );
 
       console.log(
@@ -350,6 +474,67 @@ async function startVentron() {
     }
   );
 
+  core.eventGateway.on(
+    'started',
+    () => {
+
+      console.log(
+        '📡 Event Gateway online.'
+      );
+    }
+  );
+
+  core.messageRouter.on(
+    'started',
+    () => {
+
+      console.log(
+        '🔀 Message Router online.'
+      );
+    }
+  );
+
+  core.aiService.engine.on(
+    'started',
+    () => {
+
+      console.log(
+        '🧠 AI Engine online.'
+      );
+    }
+  );
+
+  core.on(
+    'aiResponse',
+    () => {
+
+      console.log(
+        '💬 AI response generated.'
+      );
+    }
+  );
+
+  core.on(
+    'commandResponse',
+    () => {
+
+      console.log(
+        '⌨️ Command processed.'
+      );
+    }
+  );
+
+  core.on(
+    'pipelineError',
+    (error) => {
+
+      console.error(
+        '❌ Pipeline Error:',
+        error.message
+      );
+    }
+  );
+
   core.on(
     'started',
     () => {
@@ -360,19 +545,9 @@ async function startVentron() {
     }
   );
 
-  core.on(
-    'stopped',
-    () => {
-
-      console.log(
-        '🛑 Ventron Core stopped.'
-      );
-    }
-  );
-
-  // ─────────────────────────────────────────────
-  // INITIALIZE
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════
+  // 🧠 INITIALIZE
+  // ═══════════════════════════════════════════
 
   core.initialize();
 
@@ -392,11 +567,19 @@ async function startVentron() {
   );
 
   console.log(
-    '│ 🧠 AI Engine       : STANDBY                 │'
+    '│ 🧠 AI Engine       : INITIALIZING            │'
   );
 
   console.log(
-    '│ 🌐 API Gateway     : STANDBY                 │'
+    '│ 💾 AI Memory       : INITIALIZING            │'
+  );
+
+  console.log(
+    '│ 📡 Event Gateway   : INITIALIZING            │'
+  );
+
+  console.log(
+    '│ 🔀 Message Router  : INITIALIZING            │'
   );
 
   console.log(
@@ -404,15 +587,7 @@ async function startVentron() {
   );
 
   console.log(
-    '│ 📡 Event Engine    : STANDBY                 │'
-  );
-
-  console.log(
     '│ 🛡️ Security Layer  : ACTIVE                 │'
-  );
-
-  console.log(
-    '│ 💾 Database        : STANDBY                 │'
   );
 
   console.log(
@@ -424,15 +599,18 @@ async function startVentron() {
   );
 
   console.log(
-    '\n🖥️ Node.js   : ' + system.node
+    '\n🖥️ Node.js   : ' +
+    system.node
   );
 
   console.log(
-    '💻 Platform  : ' + system.platform
+    '💻 Platform  : ' +
+    system.platform
   );
 
   console.log(
-    '🧠 CPU Cores : ' + system.cpuCores
+    '🧠 CPU Cores : ' +
+    system.cpuCores
   );
 
   console.log(
@@ -441,15 +619,15 @@ async function startVentron() {
     ' MB free'
   );
 
-  // ─────────────────────────────────────────────
-  // START CORE
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════
+  // 🚀 START CORE
+  // ═══════════════════════════════════════════
 
   await core.start();
 
-  // ─────────────────────────────────────────────
-  // DIAGNOSTICS
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════
+  // 📊 DIAGNOSTICS
+  // ═══════════════════════════════════════════
 
   const diagnostics =
     new VentronDiagnostics(core);
@@ -459,9 +637,9 @@ async function startVentron() {
 
   printDiagnostics(report);
 
-  // ─────────────────────────────────────────────
-  // START HTTP SERVER
-  // ─────────────────────────────────────────────
+  // ═══════════════════════════════════════════
+  // 🌐 HTTP SERVER
+  // ═══════════════════════════════════════════
 
   const server =
     startHealthServer(core);
@@ -475,7 +653,11 @@ async function startVentron() {
   );
 
   console.log(
-    '🧠 Core architecture is online.'
+    '🧠 AI architecture is online.'
+  );
+
+  console.log(
+    '📡 Event pipeline is online.'
   );
 
   console.log(
