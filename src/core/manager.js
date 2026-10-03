@@ -46,6 +46,9 @@ const VentronSecurityManager =
 const VentronWebhookServer =
   require('../webhook/server');
 
+const VentronWebhookTester =
+  require('../webhook/test');
+
 
 class VentronCore extends EventEmitter {
 
@@ -101,12 +104,22 @@ class VentronCore extends EventEmitter {
 
 
     // ═══════════════════════════════════════════
-    // 📡 WEBHOOK GATEWAY
+    // 📡 WEBHOOK
     // ═══════════════════════════════════════════
 
     this.webhook =
       new VentronWebhookServer(
         config,
+        this
+      );
+
+
+    // ═══════════════════════════════════════════
+    // 🧪 WEBHOOK TESTER
+    // ═══════════════════════════════════════════
+
+    this.webhookTester =
+      new VentronWebhookTester(
         this
       );
 
@@ -140,6 +153,11 @@ class VentronCore extends EventEmitter {
         config
       );
 
+
+    // ═══════════════════════════════════════════
+    // 🌐 PLATFORM SYSTEM
+    // ═══════════════════════════════════════════
+
     this.platformManager =
       new VentronPlatformManager(
         config
@@ -150,34 +168,29 @@ class VentronCore extends EventEmitter {
         config
       );
 
+
+    // ═══════════════════════════════════════════
+    // 🧪 SELF TEST
+    // ═══════════════════════════════════════════
+
     this.selfTest =
       new VentronSelfTest(
         this
       );
 
 
-    // ═══════════════════════════════════════════
-    // 🔗 CORE CONNECTIONS
-    // ═══════════════════════════════════════════
-
+    // Core reference
     this.commandEngine.setCore(
       this
     );
 
 
-    // ═══════════════════════════════════════════
-    // 🌐 REGISTER PLATFORM
-    // ═══════════════════════════════════════════
-
+    // Register Messenger
     this.platformManager.register(
       'messenger',
       this.messenger
     );
 
-
-    // ═══════════════════════════════════════════
-    // 🔌 PIPELINES
-    // ═══════════════════════════════════════════
 
     this.connectEventPipeline();
 
@@ -190,9 +203,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
-  // 🔐 SECURITY CHECK
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  // 🛡️ SECURITY CHECK
+  // ═══════════════════════════════════════════
 
   checkSecurity(event) {
 
@@ -229,9 +242,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
   // 🔀 EVENT PIPELINE
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
 
   connectEventPipeline() {
 
@@ -308,6 +321,10 @@ class VentronCore extends EventEmitter {
       }
     );
 
+
+    // ═══════════════════════════════════════════
+    // 🧠 CHAT → AI → RESPONSE
+    // ═══════════════════════════════════════════
 
     this.messageRouter.on(
       'chat',
@@ -439,6 +456,10 @@ class VentronCore extends EventEmitter {
     );
 
 
+    // ═══════════════════════════════════════════
+    // ⌨️ COMMAND → RESPONSE
+    // ═══════════════════════════════════════════
+
     this.messageRouter.on(
       'command',
       async (
@@ -541,9 +562,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
   // 🌐 PLATFORM PIPELINE
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
 
   connectPlatformPipeline() {
 
@@ -619,9 +640,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
   // 🧩 MODULE SYSTEM
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
 
   registerModule(
     name,
@@ -722,9 +743,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
-  // 🧠 INITIALIZE
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  // 🚀 INITIALIZE
+  // ═══════════════════════════════════════════
 
   initialize() {
 
@@ -773,7 +794,10 @@ class VentronCore extends EventEmitter {
           this.platformManager.list(),
 
         webhook:
-          this.webhook.getStatus()
+          this.webhook.getStatus(),
+
+        webhookTester:
+          this.webhookTester.getStatus()
       }
     );
 
@@ -801,9 +825,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
-  // 🚀 START
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  // ⚡ START
+  // ═══════════════════════════════════════════
 
   async start() {
 
@@ -926,9 +950,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
   // 🧪 SELF TEST
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
 
   async runSelfTest() {
 
@@ -949,9 +973,32 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
-  // 📡 EVENT
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  // 🧪 WEBHOOK TEST
+  // ═══════════════════════════════════════════
+
+  async runWebhookTest() {
+
+    if (
+      !this.state.started
+    ) {
+
+      return {
+        success:
+          false,
+
+        reason:
+          'CORE_OFFLINE'
+      };
+    }
+
+    return this.webhookTester.runAll();
+  }
+
+
+  // ═══════════════════════════════════════════
+  // 📡 EVENT PROCESSING
+  // ═══════════════════════════════════════════
 
   async processEvent(
     event
@@ -987,9 +1034,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
-  // 💬 CHAT
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  // 🧠 DIRECT AI CHAT
+  // ═══════════════════════════════════════════
 
   async chat(input) {
 
@@ -1025,9 +1072,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
   // 🛑 STOP
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
 
   async stop() {
 
@@ -1137,9 +1184,9 @@ class VentronCore extends EventEmitter {
   }
 
 
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
   // 📊 STATUS
-  // ═════════════════════════════════════════════
+  // ═══════════════════════════════════════════
 
   getStatus() {
 
@@ -1171,6 +1218,9 @@ class VentronCore extends EventEmitter {
 
       webhook:
         this.webhook.getStatus(),
+
+      webhookTester:
+        this.webhookTester.getStatus(),
 
       commandEngine:
         this.commandEngine.getStatus(),
@@ -1205,6 +1255,7 @@ class VentronCore extends EventEmitter {
     };
   }
 }
+
 
 module.exports =
   VentronCore;
