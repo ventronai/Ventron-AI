@@ -11,11 +11,23 @@
 'use strict';
 
 const EventEmitter = require('events');
-const CommandEngine = require('../commands/engine');
+
+const CommandEngine =
+  require('../commands/engine');
+
+const VentronEventGateway =
+  require('../events/gateway');
+
+const VentronMessageRouter =
+  require('../events/router');
+
+const VentronAIService =
+  require('../ai/service');
 
 class VentronCore extends EventEmitter {
 
   constructor(config) {
+
     super();
 
     if (!config || !config.bot) {
@@ -35,20 +47,196 @@ class VentronCore extends EventEmitter {
 
     this.modules = new Map();
 
-    // ═══════════════════════════════════════════════
-    // ⚡ COMMAND ENGINE
-    // ═══════════════════════════════════════════════
+    // ═══════════════════════════════════════════
+    // ⌨️ COMMAND ENGINE
+    // ═══════════════════════════════════════════
 
-    this.commandEngine = new CommandEngine(config);
+    this.commandEngine =
+      new CommandEngine(config);
+
+    // ═══════════════════════════════════════════
+    // 📡 EVENT GATEWAY
+    // ═══════════════════════════════════════════
+
+    this.eventGateway =
+      new VentronEventGateway(config);
+
+    // ═══════════════════════════════════════════
+    // 🔀 MESSAGE ROUTER
+    // ═══════════════════════════════════════════
+
+    this.messageRouter =
+      new VentronMessageRouter(config);
+
+    // ═══════════════════════════════════════════
+    // 🧠 AI SERVICE
+    // ═══════════════════════════════════════════
+
+    this.aiService =
+      new VentronAIService(config);
+
+    // ═══════════════════════════════════════════
+    // 🔗 INTERNAL EVENT CONNECTIONS
+    // ═══════════════════════════════════════════
+
+    this.connectEventPipeline();
   }
 
-  // ═════════════════════════════════════════════════
-  // 🧩 MODULE MANAGEMENT
-  // ═════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════
+  // 🔗 CONNECT EVENT PIPELINE
+  // ═══════════════════════════════════════════════
+
+  connectEventPipeline() {
+
+    // Event Gateway → Router
+    this.eventGateway.on(
+      'message',
+      async (event) => {
+
+        try {
+
+          await this.messageRouter.route(
+            event
+          );
+
+        } catch (error) {
+
+          this.emit(
+            'pipelineError',
+            error
+          );
+        }
+      }
+    );
+
+    this.eventGateway.on(
+      'command',
+      async (event) => {
+
+        try {
+
+          await this.messageRouter.route(
+            event
+          );
+
+        } catch (error) {
+
+          this.emit(
+            'pipelineError',
+            error
+          );
+        }
+      }
+    );
+
+    // Router → AI Service
+    this.messageRouter.on(
+      'chat',
+      async (data) => {
+
+        try {
+
+          const event =
+            data.event;
+
+          const result =
+            await this.aiService.chat({
+
+              message:
+                event.message,
+
+              user:
+                event.user,
+
+              thread:
+                event.thread,
+
+              userId:
+                event.user?.id,
+
+              threadId:
+                event.thread?.id,
+
+              context: {
+                source:
+                  event.source,
+
+                eventId:
+                  event.id
+              }
+            });
+
+          this.emit(
+            'aiResponse',
+            {
+              event,
+              result
+            }
+          );
+
+        } catch (error) {
+
+          this.emit(
+            'pipelineError',
+            error
+          );
+        }
+      }
+    );
+
+    // Router → Command Engine
+    this.messageRouter.on(
+      'command',
+      async (data) => {
+
+        try {
+
+          const event =
+            data.event;
+
+          const result =
+            await this.commandEngine.process(
+              event.message,
+              {
+                user:
+                  event.user,
+
+                thread:
+                  event.thread,
+
+                event
+              }
+            );
+
+          this.emit(
+            'commandResponse',
+            {
+              event,
+              result
+            }
+          );
+
+        } catch (error) {
+
+          this.emit(
+            'pipelineError',
+            error
+          );
+        }
+      }
+    );
+  }
+
+  // ═══════════════════════════════════════════════
+  // 📦 MODULE SYSTEM
+  // ═══════════════════════════════════════════════
 
   registerModule(name, module) {
 
-    if (!name || typeof name !== 'string') {
+    if (
+      !name ||
+      typeof name !== 'string'
+    ) {
       throw new TypeError(
         'Module name must be a string.'
       );
@@ -66,12 +254,18 @@ class VentronCore extends EventEmitter {
       );
     }
 
-    this.modules.set(name, module);
-
-    this.emit('moduleRegistered', {
+    this.modules.set(
       name,
       module
-    });
+    );
+
+    this.emit(
+      'moduleRegistered',
+      {
+        name,
+        module
+      }
+    );
 
     return true;
   }
@@ -86,22 +280,28 @@ class VentronCore extends EventEmitter {
 
   removeModule(name) {
 
-    const removed = this.modules.delete(name);
+    const removed =
+      this.modules.delete(name);
 
     if (removed) {
-      this.emit('moduleRemoved', name);
+      this.emit(
+        'moduleRemoved',
+        name
+      );
     }
 
     return removed;
   }
 
   listModules() {
-    return Array.from(this.modules.keys());
+    return Array.from(
+      this.modules.keys()
+    );
   }
 
-  // ═════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════
   // 🧠 INITIALIZE
-  // ═════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════
 
   initialize() {
 
@@ -109,24 +309,37 @@ class VentronCore extends EventEmitter {
       return;
     }
 
-    // Initialize command system
     const commandStatus =
       this.commandEngine.initialize();
 
+    this.eventGateway.initialize();
+
+    this.messageRouter.initialize();
+
+    this.aiService.initialize();
+
     this.state.initialized = true;
 
-    this.emit('initialized', {
-      bot: this.config.bot.name,
-      version: this.config.bot.version,
-      commands: commandStatus.loaded.map(
-        command => command.name
-      )
-    });
+    this.emit(
+      'initialized',
+      {
+        bot:
+          this.config.bot.name,
+
+        version:
+          this.config.bot.version,
+
+        commands:
+          commandStatus.loaded.map(
+            command => command.name
+          )
+      }
+    );
   }
 
-  // ═════════════════════════════════════════════════
-  // 🚀 START CORE
-  // ═════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════
+  // 🚀 START
+  // ═══════════════════════════════════════════════
 
   async start() {
 
@@ -142,22 +355,59 @@ class VentronCore extends EventEmitter {
     this.state.stopped = false;
     this.state.startTime = Date.now();
 
-    // Start command engine
+    // ─────────────────────────────────────────
+    // ⌨️ COMMAND ENGINE
+    // ─────────────────────────────────────────
+
     await this.commandEngine.start();
 
-    this.emit('commandEngineStarted', {
-      commands: this.commandEngine
-        .handler
-        .list()
-    });
+    this.emit(
+      'commandEngineStarted',
+      {
+        commands:
+          this.commandEngine
+            .handler
+            .list()
+      }
+    );
 
-    // Start registered modules
-    for (const [name, module] of this.modules) {
+    // ─────────────────────────────────────────
+    // 📡 EVENT GATEWAY
+    // ─────────────────────────────────────────
+
+    await this.eventGateway.start();
+
+    // ─────────────────────────────────────────
+    // 🔀 MESSAGE ROUTER
+    // ─────────────────────────────────────────
+
+    await this.messageRouter.start();
+
+    // ─────────────────────────────────────────
+    // 🧠 AI SERVICE
+    // ─────────────────────────────────────────
+
+    await this.aiService.start();
+
+    // ─────────────────────────────────────────
+    // 🧩 CUSTOM MODULES
+    // ─────────────────────────────────────────
+
+    for (
+      const [name, module]
+      of this.modules
+    ) {
 
       try {
 
-        if (typeof module.start === 'function') {
-          await module.start(this);
+        if (
+          typeof module.start ===
+          'function'
+        ) {
+
+          await module.start(
+            this
+          );
         }
 
         this.emit(
@@ -167,10 +417,13 @@ class VentronCore extends EventEmitter {
 
       } catch (error) {
 
-        this.emit('moduleError', {
-          name,
-          error
-        });
+        this.emit(
+          'moduleError',
+          {
+            name,
+            error
+          }
+        );
 
         console.error(
           `❌ Module "${name}" failed to start:`,
@@ -179,29 +432,40 @@ class VentronCore extends EventEmitter {
       }
     }
 
-    this.emit('started', {
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  // ═════════════════════════════════════════════════
-  // 💬 PROCESS MESSAGE
-  // ═════════════════════════════════════════════════
-
-  async processMessage(message, context = {}) {
-
-    return this.commandEngine.process(
-      message,
+    this.emit(
+      'started',
       {
-        ...context,
-        core: this
+        timestamp:
+          new Date().toISOString()
       }
     );
   }
 
-  // ═════════════════════════════════════════════════
-  // 🛑 STOP CORE
-  // ═════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════
+  // 📥 PROCESS EVENT
+  // ═══════════════════════════════════════════════
+
+  async processEvent(event) {
+
+    return this.eventGateway.receive(
+      event
+    );
+  }
+
+  // ═══════════════════════════════════════════════
+  // 💬 DIRECT CHAT
+  // ═══════════════════════════════════════════════
+
+  async chat(input) {
+
+    return this.aiService.chat(
+      input
+    );
+  }
+
+  // ═══════════════════════════════════════════════
+  // 🛑 STOP
+  // ═══════════════════════════════════════════════
 
   async stop() {
 
@@ -217,13 +481,21 @@ class VentronCore extends EventEmitter {
         this.modules.entries()
       ).reverse();
 
-    // Stop registered modules
-    for (const [name, module] of modules) {
+    for (
+      const [name, module]
+      of modules
+    ) {
 
       try {
 
-        if (typeof module.stop === 'function') {
-          await module.stop(this);
+        if (
+          typeof module.stop ===
+          'function'
+        ) {
+
+          await module.stop(
+            this
+          );
         }
 
         this.emit(
@@ -233,38 +505,49 @@ class VentronCore extends EventEmitter {
 
       } catch (error) {
 
-        this.emit('moduleError', {
-          name,
-          error
-        });
-
-        console.error(
-          `❌ Module "${name}" failed to stop:`,
-          error.message
+        this.emit(
+          'moduleError',
+          {
+            name,
+            error
+          }
         );
       }
     }
 
-    // Stop command engine
+    await this.aiService.stop();
+
+    await this.messageRouter.stop();
+
+    await this.eventGateway.stop();
+
     await this.commandEngine.stop();
 
     this.state.started = false;
     this.state.stopped = true;
 
-    this.emit('stopped', {
-      timestamp: new Date().toISOString()
-    });
+    this.emit(
+      'stopped',
+      {
+        timestamp:
+          new Date().toISOString()
+      }
+    );
   }
 
-  // ═════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════
   // 📊 STATUS
-  // ═════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════
 
   getStatus() {
 
     return {
-      bot: this.config.bot.name,
-      version: this.config.bot.version,
+
+      bot:
+        this.config.bot.name,
+
+      version:
+        this.config.bot.version,
 
       initialized:
         this.state.initialized,
@@ -281,16 +564,27 @@ class VentronCore extends EventEmitter {
       commandEngine:
         this.commandEngine.getStatus(),
 
+      eventGateway:
+        this.eventGateway.getStatus(),
+
+      messageRouter:
+        this.messageRouter.getStatus(),
+
+      ai:
+        this.aiService.getStatus(),
+
       uptime:
         this.state.startTime
           ? Math.floor(
-              (Date.now() -
-                this.state.startTime) /
-              1000
+              (
+                Date.now() -
+                this.state.startTime
+              ) / 1000
             )
           : 0
     };
   }
 }
 
-module.exports = VentronCore;
+module.exports =
+  VentronCore;
