@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║              VENTRON COMMAND ENGINE            ║
- * ║       Handler + Loader Integration Layer        ║
+ * ║              VENTRON COMMAND ENGINE             ║
+ * ║          Central Command Processing Core         ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -10,8 +10,11 @@
 
 'use strict';
 
-const CommandHandler = require('./handler');
-const CommandLoader = require('./loader');
+const CommandHandler =
+  require('./handler');
+
+const CommandLoader =
+  require('./loader');
 
 class CommandEngine {
 
@@ -25,16 +28,30 @@ class CommandEngine {
 
     this.config = config;
 
-    // Command processing system
-    this.handler = new CommandHandler(config);
+    this.handler =
+      new CommandHandler(config);
 
-    // Dynamic command loader
-    this.loader = new CommandLoader(
-      this.handler
-    );
+    this.loader =
+      new CommandLoader(
+        this.handler
+      );
 
     this.initialized = false;
     this.started = false;
+
+    // Core reference
+    this.core = null;
+  }
+
+  // ═══════════════════════════════════════════════
+  // 🔗 CONNECT CORE
+  // ═══════════════════════════════════════════════
+
+  setCore(core) {
+
+    this.core = core;
+
+    return true;
   }
 
   // ═══════════════════════════════════════════════
@@ -47,14 +64,19 @@ class CommandEngine {
       return;
     }
 
-    const result = this.loader.loadAll();
+    const result =
+      this.loader.loadAll();
 
     this.initialized = true;
 
     return {
       success: true,
-      loaded: result.loaded,
-      failed: result.failed
+
+      loaded:
+        result.loaded,
+
+      failed:
+        result.failed
     };
   }
 
@@ -76,33 +98,28 @@ class CommandEngine {
 
     return {
       success: true,
-      commands: this.handler.list()
+
+      commands:
+        this.handler.list()
     };
   }
 
   // ═══════════════════════════════════════════════
-  // 🛑 STOP
+  // ⚡ PROCESS COMMAND
   // ═══════════════════════════════════════════════
 
-  async stop() {
+  async process(
+    message,
+    context = {}
+  ) {
 
     if (!this.started) {
-      return;
-    }
 
-    this.started = false;
-  }
-
-  // ═══════════════════════════════════════════════
-  // 💬 PROCESS MESSAGE
-  // ═══════════════════════════════════════════════
-
-  async process(message, context = {}) {
-
-    if (!this.started) {
       return {
         handled: false,
-        reason: 'COMMAND_ENGINE_OFFLINE'
+
+        reason:
+          'COMMAND_ENGINE_OFFLINE'
       };
     }
 
@@ -110,8 +127,18 @@ class CommandEngine {
       message,
       {
         ...context,
-        handler: this.handler,
-        engine: this
+
+        config:
+          this.config,
+
+        core:
+          this.core,
+
+        handler:
+          this.handler,
+
+        engine:
+          this
       }
     );
   }
@@ -128,19 +155,46 @@ class CommandEngine {
   }
 
   // ═══════════════════════════════════════════════
+  // 🛑 STOP
+  // ═══════════════════════════════════════════════
+
+  async stop() {
+
+    if (!this.started) {
+      return;
+    }
+
+    this.started = false;
+  }
+
+  // ═══════════════════════════════════════════════
   // 📊 STATUS
   // ═══════════════════════════════════════════════
 
   getStatus() {
 
     return {
-      initialized: this.initialized,
-      started: this.started,
-      commandCount: this.handler.list().length,
-      commands: this.handler.list(),
-      loader: this.loader.getStatus()
+
+      initialized:
+        this.initialized,
+
+      started:
+        this.started,
+
+      coreConnected:
+        Boolean(this.core),
+
+      commandCount:
+        this.handler.list().length,
+
+      commands:
+        this.handler.list(),
+
+      loader:
+        this.loader.getStatus()
     };
   }
 }
 
-module.exports = CommandEngine;
+module.exports =
+  CommandEngine;
