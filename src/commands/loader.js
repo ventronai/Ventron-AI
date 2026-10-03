@@ -22,35 +22,56 @@ class CommandLoader {
 
     this.handler = handler;
 
+    // Only real command modules are stored here.
     this.commandsPath =
       options.commandsPath ||
-      path.join(__dirname);
+      path.join(__dirname, 'modules');
 
     this.loaded = [];
     this.failed = [];
   }
 
-  /**
-   * Check whether a file is a JavaScript command file
-   */
+  // ═════════════════════════════════════════════════
+  // 📁 FILE CHECK
+  // ═════════════════════════════════════════════════
+
   isCommandFile(file) {
     return (
       file.endsWith('.js') &&
-      file !== path.basename(__filename)
+      !file.startsWith('_')
     );
   }
 
-  /**
-   * Load one command file
-   */
+  // ═════════════════════════════════════════════════
+  // 📦 LOAD ONE COMMAND
+  // ═════════════════════════════════════════════════
+
   loadFile(filePath) {
     try {
+
       delete require.cache[require.resolve(filePath)];
 
       const command = require(filePath);
 
       if (!command || typeof command !== 'object') {
-        throw new Error('Command module must export an object.');
+        throw new Error(
+          'Command module must export an object.'
+        );
+      }
+
+      if (
+        !command.name ||
+        typeof command.name !== 'string'
+      ) {
+        throw new Error(
+          'Command name is required.'
+        );
+      }
+
+      if (typeof command.execute !== 'function') {
+        throw new Error(
+          `Command "${command.name}" must have an execute() function.`
+        );
       }
 
       this.handler.register(command);
@@ -82,10 +103,12 @@ class CommandLoader {
     }
   }
 
-  /**
-   * Load all commands
-   */
+  // ═════════════════════════════════════════════════
+  // 🚀 LOAD ALL COMMANDS
+  // ═════════════════════════════════════════════════
+
   loadAll() {
+
     if (!fs.existsSync(this.commandsPath)) {
       throw new Error(
         `Commands directory does not exist: ${this.commandsPath}`
@@ -100,7 +123,10 @@ class CommandLoader {
         continue;
       }
 
-      const filePath = path.join(this.commandsPath, file);
+      const filePath = path.join(
+        this.commandsPath,
+        file
+      );
 
       if (!fs.statSync(filePath).isFile()) {
         continue;
@@ -115,10 +141,12 @@ class CommandLoader {
     };
   }
 
-  /**
-   * Reload one command
-   */
+  // ═════════════════════════════════════════════════
+  // 🔄 RELOAD COMMAND
+  // ═════════════════════════════════════════════════
+
   reload(name) {
+
     const command = this.handler.get(name);
 
     if (!command) {
@@ -141,13 +169,17 @@ class CommandLoader {
 
     this.handler.unregister(command.name);
 
-    return this.loadFile(loadedCommand.file);
+    return this.loadFile(
+      loadedCommand.file
+    );
   }
 
-  /**
-   * Get loader status
-   */
+  // ═════════════════════════════════════════════════
+  // 📊 LOADER STATUS
+  // ═════════════════════════════════════════════════
+
   getStatus() {
+
     return {
       commandsPath: this.commandsPath,
       loadedCount: this.loaded.length,
