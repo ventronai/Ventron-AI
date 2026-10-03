@@ -1,7 +1,7 @@
 /**
  * ╔══════════════════════════════════════════════════╗
- * ║                 VENTRON AI CORE                 ║
- * ║            CENTRAL CONTROL MANAGER              ║
+ * ║                VENTRON AI CORE                  ║
+ * ║          CENTRAL SYSTEM CONTROLLER              ║
  * ╚══════════════════════════════════════════════════╝
  *
  * Version : 0.1.0
@@ -10,115 +10,68 @@
 
 'use strict';
 
-const EventEmitter =
-  require('events');
+const EventEmitter = require('events');
 
-const CommandEngine =
-  require('../commands/engine');
+const config = require('../../config');
 
-const VentronEventGateway =
-  require('../events/gateway');
+const VentronLogger = require('./logger');
+const VentronSecurityManager = require('../security/manager');
+const VentronStorageManager = require('../storage/manager');
+const VentronProfileManager = require('../storage/profile');
 
-const VentronMessageRouter =
-  require('../events/router');
+const VentronWebhookServer = require('../webhook/server');
+const VentronWebhookTester = require('../webhook/test');
 
-const VentronAIService =
-  require('../ai/service');
+const VentronCommandEngine = require('../commands/engine');
+const VentronEventGateway = require('../events/gateway');
+const VentronMessageRouter = require('../events/router');
 
-const VentronResponseEngine =
-  require('../response/engine');
+const VentronAIService = require('../ai/service');
+const VentronResponseEngine = require('../response/engine');
 
-const VentronPlatformManager =
-  require('../platform/manager');
+const VentronPlatformManager = require('../platform/manager');
+const VentronMessengerAdapter = require('../platform/messenger');
 
-const VentronMessengerAdapter =
-  require('../platform/messenger');
-
-const VentronSelfTest =
-  require('./selftest');
-
-const VentronLogger =
-  require('./logger');
-
-const VentronSecurityManager =
-  require('../security/manager');
-
-const VentronWebhookServer =
-  require('../webhook/server');
-
-const VentronWebhookTester =
-  require('../webhook/test');
-
-const VentronStorageManager =
-  require('../storage/manager');
+const VentronSelfTest = require('./selftest');
 
 
 class VentronCore extends EventEmitter {
 
-  constructor(config) {
+  constructor() {
 
     super();
 
-    if (
-      !config ||
-      !config.bot
-    ) {
-      throw new Error(
-        'Valid Ventron configuration is required.'
-      );
-    }
-
-    this.config =
-      config;
+    this.config = config;
 
     this.state = {
-
       initialized: false,
-
       started: false,
-
-      stopped: false,
-
-      startTime: null
+      stopped: false
     };
 
-    this.modules =
-      new Map();
 
-
-    // ═══════════════════════════════════════════
-    // 📝 LOGGER
-    // ═══════════════════════════════════════════
+    /* ═══════════════════════════════════════
+       CORE SERVICES
+    ═══════════════════════════════════════ */
 
     this.logger =
-      new VentronLogger(
-        config
-      );
-
-
-    // ═══════════════════════════════════════════
-    // 🛡️ SECURITY
-    // ═══════════════════════════════════════════
+      new VentronLogger(config);
 
     this.security =
-      new VentronSecurityManager(
-        config
-      );
-
-
-    // ═══════════════════════════════════════════
-    // 💾 STORAGE
-    // ═══════════════════════════════════════════
+      new VentronSecurityManager(config);
 
     this.storage =
-      new VentronStorageManager(
-        config
+      new VentronStorageManager(config);
+
+    this.profile =
+      new VentronProfileManager(
+        this.storage
       );
 
 
-    // ═══════════════════════════════════════════
-    // 📡 WEBHOOK
-    // ═══════════════════════════════════════════
+    /* ═══════════════════════════════════════
+       WEBHOOK
+    ═══════════════════════════════════════ */
 
     this.webhook =
       new VentronWebhookServer(
@@ -126,152 +79,120 @@ class VentronCore extends EventEmitter {
         this
       );
 
-
-    // ═══════════════════════════════════════════
-    // 🧪 WEBHOOK TESTER
-    // ═══════════════════════════════════════════
-
     this.webhookTester =
       new VentronWebhookTester(
         this
       );
 
 
-    // ═══════════════════════════════════════════
-    // ⚡ CORE SERVICES
-    // ═══════════════════════════════════════════
+    /* ═══════════════════════════════════════
+       COMMAND / EVENT SYSTEM
+    ═══════════════════════════════════════ */
 
     this.commandEngine =
-      new CommandEngine(
-        config
-      );
+      new VentronCommandEngine(config);
 
     this.eventGateway =
-      new VentronEventGateway(
-        config
-      );
+      new VentronEventGateway(config);
 
     this.messageRouter =
-      new VentronMessageRouter(
-        config
-      );
+      new VentronMessageRouter(config);
+
+
+    /* ═══════════════════════════════════════
+       AI SYSTEM
+    ═══════════════════════════════════════ */
 
     this.aiService =
-      new VentronAIService(
-        config
-      );
+      new VentronAIService(config);
+
+    this.aiService.setCore(this);
+
+
+    /* ═══════════════════════════════════════
+       RESPONSE SYSTEM
+    ═══════════════════════════════════════ */
 
     this.responseEngine =
-      new VentronResponseEngine(
-        config
-      );
+      new VentronResponseEngine(config);
 
 
-    // ═══════════════════════════════════════════
-    // 🌐 PLATFORM SYSTEM
-    // ═══════════════════════════════════════════
+    /* ═══════════════════════════════════════
+       PLATFORM SYSTEM
+    ═══════════════════════════════════════ */
 
     this.platformManager =
-      new VentronPlatformManager(
-        config
-      );
+      new VentronPlatformManager(config);
 
     this.messenger =
-      new VentronMessengerAdapter(
-        config
-      );
+      new VentronMessengerAdapter(config);
 
 
-    // ═══════════════════════════════════════════
-    // 🧪 SELF TEST
-    // ═══════════════════════════════════════════
-
-    this.selfTest =
-      new VentronSelfTest(
-        this
-      );
-
-
-    // Core reference
-    this.commandEngine.setCore(
-      this
-    );
-
-
-    // Register Messenger
     this.platformManager.register(
       'messenger',
       this.messenger
     );
 
 
-    this.connectEventPipeline();
+    /* ═══════════════════════════════════════
+       SELF TEST
+    ═══════════════════════════════════════ */
 
-    this.connectPlatformPipeline();
+    this.selfTest =
+      new VentronSelfTest(this);
 
 
-    this.logger.debug(
-      'Ventron Core instance created.'
-    );
+    /* ═══════════════════════════════════════
+       INTERNAL CONNECTIONS
+    ═══════════════════════════════════════ */
+
+    this.commandEngine.setCore(this);
+
+    this.connectPipelines();
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🛡️ SECURITY CHECK
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     PIPELINE CONNECTION
+  ═══════════════════════════════════════ */
 
-  checkSecurity(event) {
+  connectPipelines() {
 
-    const identifier =
-      event?.user?.id ||
-      event?.sender?.id ||
-      event?.userId ||
-      event?.source ||
-      'unknown';
+    /*
+     * Platform → Event Gateway
+     */
 
-    const result =
-      this.security.check(
-        identifier
-      );
+    this.platformManager.on(
+      'event',
+      async (event) => {
 
-    if (
-      !result.allowed
-    ) {
+        try {
 
-      this.logger.warn(
-        'Security request blocked.',
-        {
-          identifier,
+          this.trackProfile(event);
 
-          reason:
-            result.reason
+          await this.eventGateway.receive(
+            event
+          );
+
+        } catch (error) {
+
+          this.logger.error(
+            `Platform event error: ${error.message}`
+          );
+
         }
-      );
 
-      return false;
-    }
-
-    return true;
-  }
+      }
+    );
 
 
-  // ═══════════════════════════════════════════
-  // 🔀 EVENT PIPELINE
-  // ═══════════════════════════════════════════
-
-  connectEventPipeline() {
+    /*
+     * Event Gateway → Message Router
+     */
 
     this.eventGateway.on(
       'message',
-      async (
-        event
-      ) => {
-
-        if (
-          !this.checkSecurity(event)
-        ) {
-          return;
-        }
+      async (event) => {
 
         try {
 
@@ -282,33 +203,22 @@ class VentronCore extends EventEmitter {
         } catch (error) {
 
           this.logger.error(
-            'Message pipeline error.',
-            {
-              error:
-                error.message
-            }
+            `Message routing error: ${error.message}`
           );
 
-          this.emit(
-            'pipelineError',
-            error
-          );
         }
+
       }
     );
 
+
+    /*
+     * Command → Command Engine
+     */
 
     this.eventGateway.on(
       'command',
-      async (
-        event
-      ) => {
-
-        if (
-          !this.checkSecurity(event)
-        ) {
-          return;
-        }
+      async (event) => {
 
         try {
 
@@ -319,113 +229,125 @@ class VentronCore extends EventEmitter {
         } catch (error) {
 
           this.logger.error(
-            'Command pipeline error.',
-            {
-              error:
-                error.message
-            }
+            `Command routing error: ${error.message}`
           );
 
-          this.emit(
-            'pipelineError',
-            error
-          );
         }
+
       }
     );
 
 
-    // ═══════════════════════════════════════════
-    // 🧠 CHAT → AI → RESPONSE
-    // ═══════════════════════════════════════════
+    /*
+     * Event → Router
+     */
 
-    this.messageRouter.on(
-      'chat',
-      async (
-        data
-      ) => {
+    this.eventGateway.on(
+      'event',
+      async (event) => {
 
         try {
 
-          const event =
-            data.event;
+          await this.messageRouter.route(
+            event
+          );
+
+        } catch (error) {
+
+          this.logger.error(
+            `Event routing error: ${error.message}`
+          );
+
+        }
+
+      }
+    );
+
+
+    /*
+     * Router → Command
+     */
+
+    this.messageRouter.on(
+      'command',
+      async (event) => {
+
+        try {
+
+          await this.commandEngine.execute(
+            event.command,
+            event.args || [],
+            event
+          );
+
+        } catch (error) {
+
+          this.logger.error(
+            `Command execution error: ${error.message}`
+          );
+
+        }
+
+      }
+    );
+
+
+    /*
+     * Router → AI Chat
+     */
+
+    this.messageRouter.on(
+      'chat',
+      async (event) => {
+
+        try {
 
           const result =
             await this.aiService.chat({
 
               message:
-                event.message,
-
-              user:
-                event.user,
-
-              thread:
-                event.thread,
+                event.text ||
+                event.message ||
+                '',
 
               userId:
-                event.user?.id,
+                event.userId ||
+                event.senderId ||
+                event.sender?.id,
 
               threadId:
+                event.threadId ||
                 event.thread?.id,
 
-              context: {
+              source:
+                event.source ||
+                'internal',
 
-                source:
-                  event.source,
+              metadata:
+                event.metadata ||
+                {}
 
-                eventId:
-                  event.id
-              }
             });
-
-
-          if (
-            !result.success
-          ) {
-
-            this.logger.warn(
-              'AI response failed.',
-              {
-                reason:
-                  result.reason
-              }
-            );
-
-            this.emit(
-              'aiResponse',
-              {
-                event,
-                result,
-                response:
-                  null
-              }
-            );
-
-            return;
-          }
 
 
           const response =
             this.responseEngine.normalize(
-              result.response,
-              {
-                recipient:
-                  event.user?.id,
-
-                metadata: {
-
-                  source:
-                    event.source,
-
-                  eventId:
-                    event.id,
-
-                  provider:
-                    result.provider
-                }
-              }
+              result
             );
 
+
+          if (
+            event.platform &&
+            event.threadId
+          ) {
+
+            await this.sendToPlatform(
+              event.platform,
+              event.threadId,
+              response
+            );
+
+          }
 
           this.emit(
             'aiResponse',
@@ -436,602 +358,297 @@ class VentronCore extends EventEmitter {
             }
           );
 
-
-          if (
-            event.source ===
-              'messenger' &&
-            response &&
-            response.success !== false
-          ) {
-
-            await this.platformManager.send(
-              'messenger',
-              response
-            );
-          }
-
         } catch (error) {
 
           this.logger.error(
-            'AI chat pipeline error.',
-            {
-              error:
-                error.message
-            }
+            `AI chat error: ${error.message}`
           );
 
-          this.emit(
-            'pipelineError',
-            error
-          );
         }
-      }
-    );
 
-
-    // ═══════════════════════════════════════════
-    // ⌨️ COMMAND → RESPONSE
-    // ═══════════════════════════════════════════
-
-    this.messageRouter.on(
-      'command',
-      async (
-        data
-      ) => {
-
-        try {
-
-          const event =
-            data.event;
-
-          const result =
-            await this.commandEngine.process(
-              event.message,
-              {
-                user:
-                  event.user,
-
-                thread:
-                  event.thread,
-
-                event
-              }
-            );
-
-
-          let response =
-            null;
-
-
-          if (
-            result &&
-            result.handled &&
-            result.result
-          ) {
-
-            response =
-              this.responseEngine.normalize(
-                result.result,
-                {
-                  recipient:
-                    event.user?.id,
-
-                  metadata: {
-
-                    source:
-                      event.source,
-
-                    eventId:
-                      event.id,
-
-                    command:
-                      result.command
-                  }
-                }
-              );
-          }
-
-
-          this.emit(
-            'commandResponse',
-            {
-              event,
-              result,
-              response
-            }
-          );
-
-
-          if (
-            event.source ===
-              'messenger' &&
-            response &&
-            response.success !== false
-          ) {
-
-            await this.platformManager.send(
-              'messenger',
-              response
-            );
-          }
-
-        } catch (error) {
-
-          this.logger.error(
-            'Command pipeline error.',
-            {
-              error:
-                error.message
-            }
-          );
-
-          this.emit(
-            'pipelineError',
-            error
-          );
-        }
       }
     );
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🌐 PLATFORM PIPELINE
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     PROFILE TRACKING
+  ═══════════════════════════════════════ */
 
-  connectPlatformPipeline() {
+  trackProfile(event = {}) {
 
-    this.messenger.on(
-      'event',
-      async (
-        event
-      ) => {
+    try {
 
-        try {
+      const userId =
+        event.userId ||
+        event.senderId ||
+        event.sender?.id ||
+        event.user?.id;
 
-          await this.eventGateway.receive(
-            event
-          );
+      const threadId =
+        event.threadId ||
+        event.thread?.id ||
+        event.conversationId;
 
-        } catch (error) {
-
-          this.logger.error(
-            'Platform event error.',
-            {
-              error:
-                error.message
-            }
-          );
-
-          this.emit(
-            'pipelineError',
-            error
-          );
-        }
-      }
-    );
+      const source =
+        event.source ||
+        event.platform ||
+        'unknown';
 
 
-    this.messenger.on(
-      'error',
-      (
-        error
-      ) => {
+      /*
+       * USER PROFILE
+       */
 
-        this.logger.error(
-          error
-        );
+      if (userId) {
 
-        this.emit(
-          'pipelineError',
-          error
-        );
-      }
-    );
-
-
-    this.platformManager.on(
-      'sent',
-      (
-        data
-      ) => {
-
-        this.logger.debug(
-          'Platform response sent.',
+        this.profile.touchUser(
+          userId,
           {
+
+            name:
+              event.user?.name ||
+              event.sender?.name ||
+              event.name ||
+              null,
+
+            firstName:
+              event.user?.firstName ||
+              event.sender?.firstName ||
+              null,
+
+            lastName:
+              event.user?.lastName ||
+              event.sender?.lastName ||
+              null,
+
             platform:
-              data.platform
+              source,
+
+            metadata:
+              {
+                lastMessageAt:
+                  new Date().toISOString()
+              }
+
           }
         );
 
-        this.emit(
-          'platformResponse',
-          data
+      }
+
+
+      /*
+       * THREAD PROFILE
+       */
+
+      if (threadId) {
+
+        this.profile.touchThread(
+          threadId,
+          {
+
+            platform:
+              source,
+
+            userId:
+              userId || null,
+
+            type:
+              event.thread?.type ||
+              'conversation',
+
+            name:
+              event.thread?.name ||
+              null,
+
+            metadata:
+              {
+                lastEventType:
+                  event.type ||
+                  'message',
+
+                lastActivityAt:
+                  new Date().toISOString()
+              }
+
+          }
         );
+
       }
-    );
-  }
 
+      return true;
 
-  // ═══════════════════════════════════════════
-  // 🧩 MODULE SYSTEM
-  // ═══════════════════════════════════════════
+    } catch (error) {
 
-  registerModule(
-    name,
-    module
-  ) {
-
-    if (
-      !name ||
-      typeof name !== 'string'
-    ) {
-
-      throw new TypeError(
-        'Module name must be a string.'
+      this.logger.error(
+        `Profile tracking error: ${error.message}`
       );
+
+      return false;
     }
-
-    if (!module) {
-
-      throw new Error(
-        `Module "${name}" cannot be empty.`
-      );
-    }
-
-    if (
-      this.modules.has(name)
-    ) {
-
-      throw new Error(
-        `Module "${name}" is already registered.`
-      );
-    }
-
-    this.modules.set(
-      name,
-      module
-    );
-
-    this.logger.info(
-      `Module registered: ${name}`
-    );
-
-    this.emit(
-      'moduleRegistered',
-      {
-        name,
-        module
-      }
-    );
-
-    return true;
   }
 
 
-  getModule(name) {
+  /* ═══════════════════════════════════════
+     INITIALIZE
+  ═══════════════════════════════════════ */
 
-    return this.modules.get(
-      name
-    );
-  }
+  async initialize() {
 
-
-  hasModule(name) {
-
-    return this.modules.has(
-      name
-    );
-  }
-
-
-  removeModule(name) {
-
-    const removed =
-      this.modules.delete(
-        name
-      );
-
-    if (removed) {
-
-      this.logger.info(
-        `Module removed: ${name}`
-      );
-
-      this.emit(
-        'moduleRemoved',
-        name
-      );
-    }
-
-    return removed;
-  }
-
-
-  listModules() {
-
-    return Array.from(
-      this.modules.keys()
-    );
-  }
-
-
-  // ═══════════════════════════════════════════
-  // 🚀 INITIALIZE
-  // ═══════════════════════════════════════════
-
-  initialize() {
-
-    if (
-      this.state.initialized
-    ) {
+    if (this.state.initialized) {
       return;
     }
 
 
-    this.logger.start();
+    this.logger.initialize();
 
-    this.storage.initialize();
 
     this.security.initialize();
 
-    this.webhook.start();
+
+    this.storage.initialize();
+
+
+    await this.commandEngine.initialize();
+
+
+    await this.eventGateway.initialize();
+
+
+    await this.messageRouter.initialize();
+
+
+    await this.aiService.initialize();
+
+
+    await this.responseEngine.initialize();
+
+
+    await this.platformManager.initialize();
+
+
+    await this.webhook.initialize();
+
+
+    this.state.initialized = true;
+    this.state.stopped = false;
 
 
     this.logger.info(
-      'Initializing Ventron Core...'
+      'Ventron Core initialized.'
     );
 
 
-    const commandStatus =
-      this.commandEngine.initialize();
-
-    this.eventGateway.initialize();
-
-    this.messageRouter.initialize();
-
-    this.aiService.initialize();
-
-    this.responseEngine.initialize();
-
-    this.platformManager.initialize();
-
-
-    this.state.initialized =
-      true;
-
-
-    this.logger.info(
-      'Ventron Core initialized.',
-      {
-
-        commands:
-          commandStatus.loaded.length,
-
-        platforms:
-          this.platformManager.list(),
-
-        storage:
-          this.storage.getStatus(),
-
-        webhook:
-          this.webhook.getStatus(),
-
-        webhookTester:
-          this.webhookTester.getStatus()
-      }
-    );
-
-
-    this.emit(
-      'initialized',
-      {
-
-        bot:
-          this.config.bot.name,
-
-        version:
-          this.config.bot.version,
-
-        commands:
-          commandStatus.loaded.map(
-            command =>
-              command.name
-          ),
-
-        platforms:
-          this.platformManager.list()
-      }
-    );
+    return {
+      success: true,
+      status: 'initialized'
+    };
   }
 
 
-  // ═══════════════════════════════════════════
-  // ⚡ START
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     START
+  ═══════════════════════════════════════ */
 
   async start() {
 
-    if (
-      !this.state.initialized
-    ) {
-      this.initialize();
+    if (!this.state.initialized) {
+      await this.initialize();
     }
 
-
-    if (
-      this.state.started
-    ) {
+    if (this.state.started) {
       return;
     }
-
-
-    this.state.started =
-      true;
-
-    this.state.stopped =
-      false;
-
-    this.state.startTime =
-      Date.now();
-
-
-    this.logger.info(
-      'Starting Ventron Core...'
-    );
 
 
     this.security.start();
 
+
     await this.storage.start();
+
 
     await this.commandEngine.start();
 
 
-    this.emit(
-      'commandEngineStarted',
-      {
-        commands:
-          this.commandEngine
-            .handler
-            .list()
-      }
-    );
-
-
     await this.eventGateway.start();
+
 
     await this.messageRouter.start();
 
+
     await this.aiService.start();
 
+
     await this.responseEngine.start();
+
 
     await this.platformManager.start();
 
 
-    for (
-      const [
-        name,
-        module
-      ] of this.modules
-    ) {
-
-      try {
-
-        if (
-          typeof module.start ===
-          'function'
-        ) {
-
-          await module.start(
-            this
-          );
-        }
+    await this.webhook.start();
 
 
-        this.logger.info(
-          `Module started: ${name}`
-        );
+    this.state.started = true;
+    this.state.stopped = false;
 
 
-        this.emit(
-          'moduleStarted',
-          name
-        );
-
-      } catch (error) {
-
-        this.logger.error(
-          `Module "${name}" failed to start.`,
-          {
-            error:
-              error.message
-          }
-        );
-
-
-        this.emit(
-          'moduleError',
-          {
-            name,
-            error
-          }
-        );
-      }
-    }
+    this.logger.start();
 
 
     this.logger.info(
-      'Ventron Core started successfully.'
+      'Ventron Core started.'
     );
 
 
     this.emit(
-      'started',
-      {
-        timestamp:
-          new Date().toISOString()
-      }
+      'started'
     );
+
+
+    return {
+      success: true,
+      status: 'online'
+    };
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🧪 SELF TEST
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     RECEIVE FROM PLATFORM
+  ═══════════════════════════════════════ */
 
-  async runSelfTest() {
-
-    if (
-      !this.state.started
-    ) {
-
-      return {
-        success:
-          false,
-
-        reason:
-          'CORE_OFFLINE'
-      };
-    }
-
-
-    return this.selfTest.runAll();
-  }
-
-
-  // ═══════════════════════════════════════════
-  // 🧪 WEBHOOK TEST
-  // ═══════════════════════════════════════════
-
-  async runWebhookTest() {
-
-    if (
-      !this.state.started
-    ) {
-
-      return {
-        success:
-          false,
-
-        reason:
-          'CORE_OFFLINE'
-      };
-    }
-
-
-    return this.webhookTester.runAll();
-  }
-
-
-  // ═══════════════════════════════════════════
-  // 📡 EVENT PROCESSING
-  // ═══════════════════════════════════════════
-
-  async processEvent(
-    event
+  async receiveFromPlatform(
+    platform,
+    payload
   ) {
+
+    if (!platform) {
+      throw new Error(
+        'Platform is required.'
+      );
+    }
+
+
+    const adapter =
+      this.platformManager.get(
+        platform
+      );
+
+
+    if (!adapter) {
+      throw new Error(
+        `Platform not found: ${platform}`
+      );
+    }
+
+
+    const event =
+      adapter.normalize(
+        payload
+      );
+
+
+    this.trackProfile(event);
+
 
     return this.eventGateway.receive(
       event
@@ -1039,197 +656,82 @@ class VentronCore extends EventEmitter {
   }
 
 
-  async receiveFromPlatform(
-    platform,
-    payload
-  ) {
-
-    return this.platformManager.receive(
-      platform,
-      payload
-    );
-  }
-
+  /* ═══════════════════════════════════════
+     SEND TO PLATFORM
+  ═══════════════════════════════════════ */
 
   async sendToPlatform(
     platform,
+    threadId,
     response
   ) {
 
-    return this.platformManager.send(
-      platform,
+    if (!platform) {
+      throw new Error(
+        'Platform is required.'
+      );
+    }
+
+
+    const adapter =
+      this.platformManager.get(
+        platform
+      );
+
+
+    if (!adapter) {
+      throw new Error(
+        `Platform not found: ${platform}`
+      );
+    }
+
+
+    return adapter.send(
+      threadId,
       response
     );
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🧠 DIRECT AI CHAT
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     INTERNAL CHAT
+  ═══════════════════════════════════════ */
 
-  async chat(input) {
+  async chat(input = {}) {
 
-    const result =
-      await this.aiService.chat(
-        input
-      );
-
-
-    if (
-      !result ||
-      !result.success
-    ) {
-      return result;
-    }
-
-
-    return {
-
-      ...result,
-
-      response:
-        this.responseEngine.normalize(
-          result.response,
-          {
-            recipient:
-              input?.userId ||
-              input?.user?.id ||
-              null
-          }
-        )
-    };
+    return this.aiService.chat(
+      input
+    );
   }
 
 
-  // ═══════════════════════════════════════════
-  // 🛑 STOP
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     WEBHOOK TEST
+  ═══════════════════════════════════════ */
 
-  async stop() {
+  async runWebhookTest() {
 
-    if (
-      !this.state.started ||
-      this.state.stopped
-    ) {
-      return;
-    }
-
-
-    this.logger.info(
-      'Stopping Ventron Core...'
-    );
-
-
-    const modules =
-      Array.from(
-        this.modules.entries()
-      ).reverse();
-
-
-    for (
-      const [
-        name,
-        module
-      ] of modules
-    ) {
-
-      try {
-
-        if (
-          typeof module.stop ===
-          'function'
-        ) {
-
-          await module.stop(
-            this
-          );
-        }
-
-
-        this.emit(
-          'moduleStopped',
-          name
-        );
-
-      } catch (error) {
-
-        this.logger.error(
-          `Module "${name}" stop error.`,
-          {
-            error:
-              error.message
-          }
-        );
-
-
-        this.emit(
-          'moduleError',
-          {
-            name,
-            error
-          }
-        );
-      }
-    }
-
-
-    await this.platformManager.stop();
-
-    await this.responseEngine.stop();
-
-    await this.aiService.stop();
-
-    await this.messageRouter.stop();
-
-    await this.eventGateway.stop();
-
-    await this.commandEngine.stop();
-
-    await this.webhook.stop();
-
-    await this.storage.stop();
-
-    this.security.stop();
-
-
-    this.state.started =
-      false;
-
-    this.state.stopped =
-      true;
-
-
-    this.logger.info(
-      'Ventron Core stopped.'
-    );
-
-
-    this.emit(
-      'stopped',
-      {
-        timestamp:
-          new Date().toISOString()
-      }
-    );
-
-
-    this.logger.stop();
+    return this.webhookTester.runAll();
   }
 
 
-  // ═══════════════════════════════════════════
-  // 📊 STATUS
-  // ═══════════════════════════════════════════
+  /* ═══════════════════════════════════════
+     SELF TEST
+  ═══════════════════════════════════════ */
+
+  async runSelfTest() {
+
+    return this.selfTest.runAll();
+  }
+
+
+  /* ═══════════════════════════════════════
+     STATUS
+  ═══════════════════════════════════════ */
 
   getStatus() {
 
     return {
-
-      bot:
-        this.config.bot.name,
-
-      version:
-        this.config.bot.version,
 
       initialized:
         this.state.initialized,
@@ -1240,55 +742,123 @@ class VentronCore extends EventEmitter {
       stopped:
         this.state.stopped,
 
-      modules:
-        this.listModules(),
+
+      bot:
+        this.config.bot,
+
 
       logger:
         this.logger.getStatus(),
 
+
       security:
         this.security.getStatus(),
+
 
       storage:
         this.storage.getStatus(),
 
-      webhook:
-        this.webhook.getStatus(),
 
-      webhookTester:
-        this.webhookTester.getStatus(),
+      profile:
+        this.profile.getStatus(),
 
-      commandEngine:
+
+      commands:
         this.commandEngine.getStatus(),
 
-      eventGateway:
+
+      events:
         this.eventGateway.getStatus(),
 
-      messageRouter:
+
+      router:
         this.messageRouter.getStatus(),
+
 
       ai:
         this.aiService.getStatus(),
 
+
       response:
         this.responseEngine.getStatus(),
+
 
       platforms:
         this.platformManager.getStatus(),
 
-      selfTest:
-        this.selfTest.getStatus(),
 
-      uptime:
-        this.state.startTime
-          ? Math.floor(
-              (
-                Date.now() -
-                this.state.startTime
-              ) / 1000
-            )
-          : 0
+      webhook:
+        this.webhook.getStatus()
+
     };
+  }
+
+
+  /* ═══════════════════════════════════════
+     STOP
+  ═══════════════════════════════════════ */
+
+  async stop() {
+
+    if (!this.state.started) {
+      return;
+    }
+
+
+    try {
+
+      await this.webhook.stop();
+
+
+      await this.platformManager.stop();
+
+
+      await this.responseEngine.stop();
+
+
+      await this.aiService.stop();
+
+
+      await this.messageRouter.stop();
+
+
+      await this.eventGateway.stop();
+
+
+      await this.commandEngine.stop();
+
+
+      await this.storage.stop();
+
+
+      this.security.stop();
+
+
+      this.logger.info(
+        'Ventron Core stopped.'
+      );
+
+
+      this.logger.stop();
+
+
+      this.state.started = false;
+      this.state.stopped = true;
+
+
+      this.emit(
+        'stopped'
+      );
+
+
+    } catch (error) {
+
+      this.logger.error(
+        `Core shutdown error: ${error.message}`
+      );
+
+      throw error;
+    }
   }
 }
 
